@@ -1,0 +1,2015 @@
+<rss version='2.0' xmlns:atom='http://www.w3.org/2005/Atom' xmlns:content='http://purl.org/rss/1.0/modules/content/'>
+<channel>
+<title>Git - Blog</title>
+<link>http://git-scm.com</link>
+<atom:link href='http://git-scm.com/blog.rss' rel='self' type='application/rss+xml' />
+<description>Git is a free and open source distributed version control system designed to handle everything from small to very large projects with speed and efficiency.</description>
+<item>
+<title> Reset</title>
+<guid>http://git-scm.com/blog/2011/07/11/reset.html</guid>
+<link>http://git-scm.com/blog/2011/07/11/reset.html</link>
+<pubDate>Mon, 11 Jul 2011 00:00:00 +0000</pubDate>
+<description>&lt;p&gt;One of the topics that I didn't cover in depth in the Pro Git book is the
+&lt;code&gt;reset&lt;/code&gt; command.  Most of the reason for this, honestly, is that
+I never strongly understood the command beyond the handful of
+specific use cases that I needed it for.  I knew what the command did, but
+not really how it was designed to work.&lt;/p&gt;
+
+&lt;p&gt;Since then I have become more comfortable with the command, largely thanks to
+&lt;a href=&quot;http://blog.plover.com/prog/git-reset.html&quot;&gt;Mark Dominus's article&lt;/a&gt;
+re-phrasing the content of the man-page, which I always found very difficult to
+follow. After reading that explanation of the command, I now personally feel
+more comfortable using &lt;code&gt;reset&lt;/code&gt; and enjoy trying to help others feel
+the same way.&lt;/p&gt;
+
+&lt;p&gt;This post assumes some basic understanding of how Git branching works. If you
+don't really know what HEAD and the Index are on a basic level, you might want to
+read chapters 2 and 3 of this book before reading this post.&lt;/p&gt;
+
+&lt;h2&gt;The Three Trees of Git&lt;/h2&gt;
+
+&lt;img src=&quot;/images/reset/trees.png&quot;/&gt;&lt;br/&gt;
+
+&lt;p&gt;The way I now like to think about &lt;code&gt;reset&lt;/code&gt; and &lt;code&gt;checkout&lt;/code&gt;
+is through the mental frame of Git being a content manager of three different
+trees. By 'tree' here I really mean &quot;collection of files&quot;, not specifically the
+data structure. (Some Git developers will get a bit mad at me here, because there
+are a few cases where the Index doesn't exactly act like a tree, but for our purposes
+it is easier - forgive me).&lt;/p&gt;
+
+&lt;p&gt;Git as a system manages and manipulates three trees in its
+normal operation. Each of these is covered in the book, but let's review them.&lt;/p&gt;
+
+
+&lt;table id=&quot;threetrees&quot;&gt;
+  &lt;tr&gt;
+    &lt;th class=&quot;title&quot; colspan=&quot;2&quot;&gt;Tree Roles&lt;/th&gt;
+  &lt;/tr&gt;&lt;tr&gt;
+    &lt;th&gt;The HEAD&lt;/th&gt;&lt;td&gt;last commit snapshot, next parent&lt;/td&gt;
+  &lt;/tr&gt;&lt;tr&gt;
+    &lt;th&gt;The Index&lt;/th&gt;&lt;td&gt;proposed next commit snapshot&lt;/td&gt;
+  &lt;/tr&gt;&lt;tr&gt;
+    &lt;th&gt;The Working Directory&lt;/th&gt;&lt;td&gt;sandbox&lt;/td&gt;
+  &lt;/tr&gt;
+&lt;/table&gt;
+
+&lt;h3 class=&quot;subtitle&quot;&gt;
+  The HEAD
+  &lt;small&gt;last commit snapshot, next parent&lt;/small&gt;
+&lt;/h3&gt;
+
+&lt;p&gt;
+The HEAD in Git is the pointer to the current branch reference, which is in
+turn a pointer to the last commit you made or the last commit that was checked
+out into your working directory.  That also means it will be the parent of the
+next commit you do. It's generally simplest to think of it as &lt;b&gt;HEAD is the
+snapshot of your last commit&lt;/b&gt;.
+&lt;/p&gt;
+
+&lt;p&gt;In fact, it's pretty easy to see what the snapshot of your HEAD looks like.
+Here is an example of getting the actual directory listing and SHA checksums
+for each file in the HEAD snapshot:&lt;/p&gt;
+
+&lt;pre&gt;
+$ cat .git/HEAD 
+ref: refs/heads/master
+
+$ cat .git/refs/heads/master 
+e9a570524b63d2a2b3a7c3325acf5b89bbeb131e
+
+$ git cat-file -p e9a570524b63d2a2b3a7c3325acf5b89bbeb131e
+tree cfda3bf379e4f8dba8717dee55aab78aef7f4daf
+author Scott Chacon &lt;schacon@gmail.com&gt; 1301511835 -0700
+committer Scott Chacon &lt;schacon@gmail.com&gt; 1301511835 -0700
+
+initial commit
+
+$ git ls-tree -r cfda3bf379e4f8dba8717dee55aab78aef7f4daf
+100644 blob a906cb2a4a904a152...   README
+100644 blob 8f94139338f9404f2...   Rakefile
+040000 tree 99f1a6d12cb4b6f19...   lib
+&lt;/pre&gt;
+
+&lt;h3 class=&quot;subtitle&quot;&gt;
+  The Index
+  &lt;small&gt;next proposed commit snapshot&lt;/small&gt;
+&lt;/h3&gt;
+
+&lt;p&gt;
+The Index is your proposed next commit.  Git populates it with a list of all the
+file contents that were last checked out into your working directory and what
+they looked like when they were originally checked out.  It's not technically a
+tree structure, it's a flattened manifest, but for our purposes it's close
+enough. When you run &lt;code&gt;git commit&lt;/code&gt;, that command only looks at your
+Index by default, not at anything in your working directory.  So, it's simplest
+to think of it as &lt;b&gt;the Index is the snapshot of your next commit&lt;/b&gt;.
+&lt;/p&gt;
+
+&lt;pre&gt;
+$ git ls-files -s
+100644 a906cb2a4a904a152e80877d4088654daad0c859 0	README
+100644 8f94139338f9404f26296befa88755fc2598c289 0	Rakefile
+100644 47c6340d6459e05787f644c2447d2595f5d3a54b 0	lib/simplegit.rb
+&lt;/pre&gt;
+
+&lt;h3 class=&quot;subtitle&quot;&gt;
+  The Working Directory
+  &lt;small&gt;sandbox, scratch area&lt;/small&gt;
+&lt;/h3&gt;
+
+&lt;p&gt;
+Finally, you have your working directory.  This is where the content of files
+are placed into actual files on your filesystem so they're easily edited by
+you. &lt;b&gt;The Working Directory is your scratch space, used to easily modify file
+content.&lt;/b&gt;
+&lt;/p&gt;
+
+&lt;pre&gt;
+$ tree
+.
+├── README
+├── Rakefile
+└── lib
+    └── simplegit.rb
+
+1 directory, 3 files
+&lt;/pre&gt;
+
+&lt;h2&gt;The Workflow&lt;/h2&gt;
+
+&lt;p&gt;So, Git is all about recording snapshots of your project in successively
+better states by manipulating these three trees, or collections of contents
+of files.&lt;/p&gt;
+
+&lt;center&gt;&lt;img width=&quot;400px&quot; src=&quot;/images/reset/workflow.png&quot;/&gt;&lt;/center&gt;&lt;br/&gt;
+
+&lt;p&gt;Let's visualize this process.  Say you go into a new directory with a single
+file in it. We'll call this V1 of the file and we'll indicate it in blue.
+Now we run &lt;code&gt;git init&lt;/code&gt;, which will create a Git repository with a
+HEAD reference that points to an unborn branch (aka, &lt;i&gt;nothing&lt;/i&gt;)&lt;/p&gt;
+
+&lt;center&gt;&lt;img width=&quot;500px&quot; src=&quot;/images/reset/ex2.png&quot;/&gt;&lt;/center&gt;&lt;br/&gt;
+
+&lt;p&gt;At this point, only the &lt;b&gt;Working Directory&lt;/b&gt; tree has any content.&lt;/p&gt;
+
+&lt;p&gt;Now we want to commit this file, so we use &lt;code&gt;git add&lt;/code&gt; to take
+content in your Working Directory and populate our Index with the updated
+content&lt;/p&gt;
+
+&lt;center&gt;&lt;img width=&quot;500px&quot; src=&quot;/images/reset/ex3.png&quot;/&gt;&lt;/center&gt;&lt;br/&gt;
+
+&lt;p&gt;Then we run &lt;code&gt;git commit&lt;/code&gt; to take what the Index looks like now
+and save it as a permanent snapshot pointed to by a commit, which HEAD is then
+updated to point at.&lt;/p&gt;
+
+&lt;center&gt;&lt;img width=&quot;500px&quot; src=&quot;/images/reset/ex4.png&quot;/&gt;&lt;/center&gt;&lt;br/&gt;
+
+&lt;p&gt;At this point, all three of the trees are the same.  If we run
+&lt;code&gt;git status&lt;/code&gt; now, we'll see no changes because they're all the
+same.&lt;/p&gt;
+
+&lt;p&gt;Now we want to make a change to that file and commit it.  We will go
+through the same process. First we change the file in our working directory.&lt;/p&gt;
+
+&lt;center&gt;&lt;img width=&quot;500px&quot; src=&quot;/images/reset/ex5.png&quot;/&gt;&lt;/center&gt;&lt;br/&gt;
+
+&lt;p&gt;If we run &lt;code&gt;git status&lt;/code&gt; right now we'll see the file in red as
+&quot;changed but not updated&quot; because that entry differs between our Index and our
+Working Directory. Next we run &lt;code&gt;git add&lt;/code&gt; on it to stage it into our
+Index.&lt;p&gt;
+
+&lt;center&gt;&lt;img width=&quot;500px&quot; src=&quot;/images/reset/ex6.png&quot;/&gt;&lt;/center&gt;&lt;br/&gt;
+
+&lt;p&gt;At this point if we run &lt;code&gt;git status&lt;/code&gt; we will see the file in green
+under 'Changes to be Committed' because the Index and HEAD differ - that is, our
+proposed next commit is now different from our last commit.  Those are the entries
+we will see as 'to be Committed'. Finally, we run &lt;code&gt;git commit&lt;/code&gt; to
+finalize the commit.&lt;/p&gt;
+
+&lt;center&gt;&lt;img width=&quot;500px&quot; src=&quot;/images/reset/ex7.png&quot;/&gt;&lt;/center&gt;&lt;br/&gt;
+
+&lt;p&gt;Now &lt;code&gt;git status&lt;/code&gt; will give us no output because all three trees
+are the same.&lt;/p&gt;
+
+&lt;p&gt;Switching branches or cloning goes through a similar process.
+When you checkout a branch, it changes &lt;b&gt;HEAD&lt;/b&gt; to point to the new commit,
+populates your &lt;b&gt;Index&lt;/b&gt; with the snapshot of that commit, then checks out the
+contents of the files in your &lt;b&gt;Index&lt;/b&gt; into your &lt;b&gt;Working Directory&lt;/b&gt;.&lt;/p&gt;
+
+
+&lt;h2&gt;The Role of Reset&lt;/h2&gt;
+
+&lt;p&gt;So the &lt;code&gt;reset&lt;/code&gt; command makes more sense when viewed in this
+context.  It directly manipulates these three trees in a simple and predictable
+way.  It does up to three basic operations.&lt;/p&gt;
+
+&lt;h3 class=&quot;subtitle&quot;&gt;
+  Step 1: Moving HEAD
+  &lt;small&gt;killing me --soft ly&lt;/small&gt;
+&lt;/h3&gt;
+
+&lt;p&gt;
+The first thing &lt;code&gt;reset&lt;/code&gt; will do is move what HEAD points to.  Unlike
+&lt;code&gt;checkout&lt;/code&gt; it does not move what branch HEAD points to, it directly
+changes the SHA of the reference itself.  This means if HEAD is pointing to the
+'master' branch, running &lt;code&gt;git reset 9e5e6a4&lt;/code&gt; will first of all make
+'master' point to &lt;code&gt;9e5e6a4&lt;/code&gt; before it does anything else.
+&lt;/p&gt;
+
+&lt;center&gt;&lt;img width=&quot;500px&quot; src=&quot;/images/reset/reset-soft.png&quot;/&gt;&lt;/center&gt;&lt;br/&gt;
+
+&lt;p&gt;No matter what form of &lt;code&gt;reset&lt;/code&gt; with a commit you invoke, this is
+the first thing it will always try to do. If you add the flag &lt;code&gt;--soft&lt;/code&gt;,
+this is the &lt;b&gt;only&lt;/b&gt; thing it will do. With &lt;code&gt;--soft&lt;/code&gt;, &lt;code&gt;reset&lt;/code&gt;
+will simply stop there.&lt;/p&gt;
+
+&lt;p&gt;Now take a second to look at that diagram and realize what it did.  It
+essentially undid the last commit you made.  When you run &lt;code&gt;git commit&lt;/code&gt;,
+Git will create a new commit and move the branch that &lt;code&gt;HEAD&lt;/code&gt; points
+to up to it.  When you &lt;code&gt;reset&lt;/code&gt; back to &lt;code&gt;HEAD~&lt;/code&gt; (the parent
+of HEAD), you are moving the branch back to where it was without changing the Index
+(staging area) or Working Directory.  You could now do a bit more work and
+&lt;code&gt;commit&lt;/code&gt; again to accomplish basically what &lt;code&gt;git commit --amend&lt;/code&gt;
+would have done.&lt;/p&gt;
+
+&lt;h3 class=&quot;subtitle&quot;&gt;
+  Step 2: Updating the Index
+  &lt;small&gt;having --mixed feelings&lt;/small&gt;
+&lt;/h3&gt;
+
+&lt;p&gt;Note that if you run &lt;code&gt;git status&lt;/code&gt; now you'll see in green the
+difference between the Index and what the new HEAD is.&lt;/p&gt;
+
+&lt;p&gt;The next thing &lt;code&gt;reset&lt;/code&gt; will do 
+is to update the Index with the contents of whatever tree HEAD now
+points to so they're the same.&lt;/p&gt;
+
+&lt;center&gt;&lt;img width=&quot;500px&quot; src=&quot;/images/reset/reset-mixed.png&quot;/&gt;&lt;/center&gt;&lt;br/&gt;
+
+&lt;p&gt;If you specify the &lt;code&gt;--mixed&lt;/code&gt; option, &lt;code&gt;reset&lt;/code&gt; will stop
+at this point.  This is also the default, so if you specify no option at all,
+this is where the command will stop.&lt;/p&gt;
+
+&lt;p&gt;Now take another second to look at THAT diagram and realize what it did. It
+still undid your last &lt;code&gt;commit&lt;/code&gt;, but also &lt;i&gt;unstaged&lt;/i&gt; everything.
+You rolled back to before you ran all your &lt;code&gt;git add&lt;/code&gt;s &lt;i&gt;AND&lt;/i&gt;
+&lt;code&gt;git commit&lt;/code&gt;.
+&lt;/p&gt;
+
+&lt;h3 class=&quot;subtitle&quot;&gt;
+  Step 3: Updating the Working Directory
+  &lt;small&gt;math is --hard, let's go shopping&lt;/small&gt;
+&lt;/h3&gt;
+
+&lt;p&gt;The third thing that &lt;code&gt;reset&lt;/code&gt; will do is to then make the Working
+Directory look like the Index.  If you use the &lt;code&gt;--hard&lt;/code&gt; option, it
+will continue to this stage.&lt;/p&gt;
+
+&lt;center&gt;&lt;img width=&quot;500px&quot; src=&quot;/images/reset/reset-hard.png&quot;/&gt;&lt;/center&gt;&lt;br/&gt;
+
+&lt;p&gt;Finally, take yet a third second to look at &lt;i&gt;that&lt;/i&gt; diagram and think
+about what happened.  You undid your last commit, all the &lt;code&gt;git add&lt;/code&gt;s,
+&lt;i&gt;and&lt;/i&gt; all the work you did in your working directory.&lt;/p&gt;
+
+&lt;p&gt;It's important to note at this point that this is the only way to make the
+&lt;code&gt;reset&lt;/code&gt; command dangerous (ie: not working directory safe).  Any
+other invocation of &lt;code&gt;reset&lt;/code&gt; can be pretty easily undone, the
+&lt;code&gt;--hard&lt;/code&gt; option cannot, since it overwrites (without checking) any
+files in the Working Directory. In this particular case, we still have &lt;b&gt;v3&lt;/b&gt;
+version of our file in a commit in our Git DB that we could get back by looking
+at our &lt;code&gt;reflog&lt;/code&gt;, but if we had not committed it, Git still would have
+overwritten the file.&lt;/p&gt;
+
+&lt;h3&gt;Overview&lt;/h3&gt;
+
+&lt;p&gt;
+That is basically it.  The &lt;code&gt;reset&lt;/code&gt; command overwrites these three
+trees in a specific order, stopping when you tell it to.
+&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;#1) Move whatever branch HEAD points to &lt;small&gt;(stop if &lt;code&gt;--soft&lt;/code&gt;)&lt;/small&gt;
+  &lt;li&gt;#2) THEN, make the Index look like that &lt;small&gt;(stop here unless &lt;code&gt;--hard&lt;/code&gt;)&lt;/small&gt;
+  &lt;li&gt;#3) THEN, make the Working Directory look like that
+&lt;/ul&gt;
+
+&lt;p&gt;There are also &lt;code&gt;--merge&lt;/code&gt; and &lt;code&gt;--keep&lt;/code&gt; options, but
+I would rather keep things simpler for now - that will be for another article.&lt;/p&gt;
+
+&lt;p&gt;Boom. You are now a &lt;code&gt;reset&lt;/code&gt; master.&lt;/p&gt;
+
+&lt;h2&gt;Reset with a Path&lt;/h2&gt;
+
+&lt;p&gt;
+Well, I lied.  That's not actually all.  If you specify a path,
+&lt;code&gt;reset&lt;/code&gt; will skip the first step and just do the other ones but limited
+to a specific file or set of files.  This actually sort of makes sense - if the
+first step is to move a pointer to a different commit, you can't make it point
+to &lt;i&gt;part&lt;/i&gt; of a commit, so it simply doesn't do that part.  However, you can
+use &lt;code&gt;reset&lt;/code&gt; to update part of the Index or the Working Directory
+with previously committed content this way.
+&lt;/p&gt;
+
+&lt;p&gt;So, assume we run &lt;code&gt;git reset file.txt&lt;/code&gt;.  This assumes, since you
+did not specify a commit SHA or branch that points to a commit SHA, and that you
+provided no reset option, that you are typing the shorthand for 
+&lt;code&gt;git reset --mixed HEAD file.txt&lt;/code&gt;, which will:
+
+&lt;ul&gt;
+  &lt;li&gt;&lt;strike&gt;#1) Move whatever branch HEAD points to &lt;small&gt;(stop if &lt;code&gt;--soft&lt;/code&gt;)&lt;/strike&gt;&lt;/small&gt;
+  &lt;li&gt;#2) THEN, make the Index look like that &lt;small&gt;&lt;strike&gt;(stop here unless &lt;code&gt;--hard&lt;/code&gt;)&lt;/strike&gt;&lt;/small&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;So it essentially just takes whatever &lt;code&gt;file.txt&lt;/code&gt; looks like in
+HEAD and puts that in the Index.&lt;/p&gt;
+
+&lt;center&gt;&lt;img width=&quot;500px&quot; src=&quot;/images/reset/reset-path1.png&quot;/&gt;&lt;/center&gt;&lt;br/&gt;
+
+&lt;p&gt;So what does that do in a practical sense?  Well, it &lt;i&gt;unstages&lt;/i&gt; the
+file.  If we look at the diagram for that command vs what &lt;code&gt;git add&lt;/code&gt;
+does, we can see that it is simply the opposite.  This is why the output of
+the &lt;code&gt;git status&lt;/code&gt; command suggests that you run this to unstage a
+file.&lt;/p&gt;
+
+&lt;center&gt;&lt;img width=&quot;500px&quot; src=&quot;/images/reset/reset-path2.png&quot;/&gt;&lt;/center&gt;&lt;br/&gt;
+
+&lt;p&gt;We could just as easily not let Git assume we meant &quot;pull the data from HEAD&quot;
+by specifying a specific commit to pull that file version from to populate our
+Index by running something like &lt;code&gt;git reset eb43bf file.txt&lt;/code&gt;.
+
+&lt;center&gt;&lt;img width=&quot;500px&quot; src=&quot;/images/reset/reset-path3.png&quot;/&gt;&lt;/center&gt;&lt;br/&gt;
+
+&lt;p&gt;So what does that mean?  That functionally does the same thing as if we had
+reverted the content of the file to &lt;b&gt;v1&lt;/b&gt;, ran &lt;code&gt;git add&lt;/code&gt; on it,
+then reverted it back to to &lt;b&gt;v3&lt;/b&gt; again.  If we run &lt;code&gt;git commit&lt;/code&gt;,
+it will record a change that reverts that file back to &lt;b&gt;v1&lt;/b&gt;, even though
+we never actually had it in our Working Directory again.&lt;/p&gt;
+
+&lt;p&gt;It's also pretty interesting to note that like &lt;code&gt;git add --patch&lt;/code&gt;,
+the &lt;code&gt;reset&lt;/code&gt; command will accept a &lt;code&gt;--patch&lt;/code&gt; option to
+unstage content on a hunk-by-hunk basis.  So you can selectively unstage or
+revert content.&lt;/p&gt;
+
+&lt;h2&gt;A fun example&lt;/h2&gt;
+
+&lt;p&gt;I may use the term &quot;fun&quot; here a bit loosely, but if this doesn't sound like
+fun to you, you may drink while doing it.  Let's look at how to do something
+interesting with this newfound power - squashing commits.&lt;/p&gt;
+
+&lt;p&gt;If you have this history and you're about to push and you want to squash
+down the last N commits you've done into one awesome commit that makes you
+look really smart (vs a bunch of commits with messages like &quot;oops.&quot;, &quot;WIP&quot;
+and &quot;forgot this file&quot;) you can use &lt;code&gt;reset&lt;/code&gt; to quickly and easily
+do that (as opposed to using &lt;code&gt;git rebase -i&lt;/code&gt;).&lt;/p&gt;
+
+&lt;p&gt;So, let's take a slightly more complex example.  Let's say you have a project
+where the first commit has one file, the second commit added a new file and changed
+the first, and the third commit changed the first file again. The second commit
+was a work in progress and you want to squash it down.&lt;/p&gt;
+
+&lt;center&gt;&lt;img width=&quot;500px&quot; src=&quot;/images/reset/squash-r1.png&quot;/&gt;&lt;/center&gt;&lt;br/&gt;
+
+&lt;p&gt;You can run &lt;code&gt;git reset --soft HEAD~2&lt;/code&gt; to move the HEAD
+branch back to an older commit (the first commit you want to keep):&lt;/p&gt;
+
+&lt;center&gt;&lt;img width=&quot;500px&quot; src=&quot;/images/reset/squash-r2.png&quot;/&gt;&lt;/center&gt;&lt;br/&gt;
+
+&lt;p&gt;And then simply run &lt;code&gt;git commit&lt;/code&gt; again:&lt;/p&gt;
+
+&lt;center&gt;&lt;img width=&quot;500px&quot; src=&quot;/images/reset/squash-r3.png&quot;/&gt;&lt;/center&gt;&lt;br/&gt;
+
+&lt;p&gt;
+Now you can see that your reachable history, the history you would push,
+now looks like you had one commit with the one file, then a second that both
+added the new file and modified the first to it's final state.
+&lt;/p&gt;
+
+&lt;h2&gt;Check it out&lt;/h2&gt;
+
+&lt;p&gt;Finally, some of you may wonder what the difference between &lt;code&gt;checkout&lt;/code&gt;
+and &lt;code&gt;reset&lt;/code&gt; is. Well, like &lt;code&gt;reset&lt;/code&gt;, &lt;code&gt;checkout&lt;/code&gt;
+manipulates the three trees and it is a bit different depending on whether you
+give the command a file path or not.  So, let's look at both examples seperately.
+&lt;/p&gt;
+
+&lt;h3&gt;git checkout [branch]&lt;/h3&gt;
+
+&lt;p&gt;Running &lt;code&gt;git checkout [branch]&lt;/code&gt; is pretty similar to running
+&lt;code&gt;git reset --hard [branch]&lt;/code&gt; in that it updates all three trees for
+you to look like &lt;code&gt;[branch]&lt;/code&gt;, but there are two important differences.
+&lt;/p&gt;
+
+&lt;p&gt;First, unlike &lt;code&gt;reset --hard&lt;/code&gt;, &lt;code&gt;checkout&lt;/code&gt; is working
+directory safe in this invocation.  It will check to make sure it's not blowing
+away files that have changes to them.  Actually, this is a subtle difference,
+because it will update all of the working directory except the files you've
+modified if it can - it will do a trivial merge between what you're checking
+out and what's already there.  In this case, &lt;code&gt;reset --hard&lt;/code&gt; will
+simply replace everything across the board without checking.
+&lt;/p&gt;
+
+&lt;p&gt;The second important difference is how it updates HEAD.  Where &lt;code&gt;reset&lt;/code&gt;
+will move the branch that HEAD points to, &lt;code&gt;checkout&lt;/code&gt; will move HEAD
+itself to point to another branch.&lt;/p&gt;
+
+&lt;p&gt;For instance, if we have two branches, 'master'
+and 'develop' pointing at different commits, and we're currently on 'develop'
+(so HEAD points to it) and we run &lt;code&gt;git reset master&lt;/code&gt;, 'develop' itself
+will now point to the same commit that 'master' does.&lt;/p&gt;
+
+&lt;p&gt;On the other hand, if we instead run &lt;code&gt;git checkout master&lt;/code&gt;, 'develop'
+will not move, HEAD itself will.  HEAD will now point to 'master'.  So, in both
+cases we're moving HEAD to point to commit A, but &lt;i&gt;how&lt;/i&gt; we do so is very
+different.  &lt;code&gt;reset&lt;/code&gt; will move the branch HEAD points to,
+&lt;code&gt;checkout&lt;/code&gt; moves HEAD itself to point to another branch.&lt;/p&gt;
+
+&lt;center&gt;&lt;img width=&quot;500px&quot; src=&quot;/images/reset/reset-checkout.png&quot;/&gt;&lt;/center&gt;&lt;br/&gt;
+
+&lt;h3&gt;git checkout [branch] file&lt;/h3&gt;
+
+&lt;p&gt;The other way to run &lt;code&gt;checkout&lt;/code&gt; is with a file path, which like
+&lt;code&gt;reset&lt;/code&gt;, does not move HEAD.  It is just like &lt;code&gt;git reset [branch] file&lt;/code&gt;
+in that it updates the index with that file at that commit, but it also
+overwrites the file in the working directory.  Think of it like
+&lt;code&gt;git reset --hard [branch] file&lt;/code&gt; - it would be exactly the same thing,
+it is also not working directory safe and it also does not move HEAD.  The only
+difference is that &lt;code&gt;reset&lt;/code&gt; with a file name will not accept &lt;code&gt;--hard&lt;/code&gt;,
+so you can't actually run that.&lt;/p&gt;
+
+&lt;p&gt;Also, like &lt;code&gt;git reset&lt;/code&gt; and &lt;code&gt;git add&lt;/code&gt;, &lt;code&gt;checkout&lt;/code&gt;
+will accept a &lt;code&gt;--patch&lt;/code&gt; option to allow you to selectively revert file
+contents on a hunk-by-hunk basis.&lt;/p&gt;
+
+&lt;h2&gt;Cheaters Gonna Cheat&lt;/h2&gt;
+
+&lt;p&gt;Hopefully now you understand and feel more comfortable with the
+&lt;code&gt;reset&lt;/code&gt; command, but are probably still a little confused about how
+exactly it differs from &lt;code&gt;checkout&lt;/code&gt; and could not possibly remember
+all the rules of the different invocations.&lt;/p&gt;
+
+&lt;p&gt;So to help you out, I've created something that I pretty much hate, which
+is a table. However, if you've followed the article at all, it may be a useful
+cheat sheet or reminder. The table shows each class of the &lt;code&gt;reset&lt;/code&gt;
+and &lt;code&gt;checkout&lt;/code&gt; commands and which of the three trees it updates.&lt;/p&gt;
+
+&lt;p&gt;Pay especial attention to the 'WD Safe?' column - if
+it's red, really think about it before you run that command.&lt;/p&gt;
+
+&lt;table class=&quot;rdata&quot;&gt;
+  &lt;tr&gt;
+    &lt;th&gt;&lt;/th&gt;
+    &lt;th&gt;head&lt;/th&gt;
+    &lt;th&gt;index&lt;/th&gt;
+    &lt;th&gt;work dir&lt;/th&gt;
+    &lt;th&gt;wd safe&lt;/th&gt;
+  &lt;/tr&gt;
+  &lt;tr class=&quot;level&quot;&gt;
+    &lt;th&gt;Commit Level&lt;/th&gt;
+    &lt;td colspan=&quot;4&quot;&gt;&amp;nbsp;&lt;/th&gt;
+  &lt;/tr&gt;
+  &lt;tr class=&quot;even&quot;&gt;
+    &lt;th class=&quot;cmd&quot;&gt;reset --soft [commit]&lt;/th&gt;
+    &lt;td class=&quot;yes&quot;&gt;REF&lt;/td&gt;
+    &lt;td class=&quot;no&quot;&gt;NO&lt;/td&gt;
+    &lt;td class=&quot;no&quot;&gt;NO&lt;/td&gt;
+    &lt;td class=&quot;yes-wd&quot;&gt;YES&lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr class=&quot;odd&quot;&gt;
+    &lt;th class=&quot;cmd&quot;&gt;reset [commit]&lt;/th&gt;
+    &lt;td class=&quot;yes&quot;&gt;REF&lt;/td&gt;
+    &lt;td class=&quot;yes&quot;&gt;YES&lt;/td&gt;
+    &lt;td class=&quot;no&quot;&gt;NO&lt;/td&gt;
+    &lt;td class=&quot;yes-wd&quot;&gt;YES&lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr class=&quot;even&quot;&gt;
+    &lt;th class=&quot;cmd&quot;&gt;reset --hard [commit]&lt;/th&gt;
+    &lt;td class=&quot;yes&quot;&gt;REF&lt;/td&gt;
+    &lt;td class=&quot;yes&quot;&gt;YES&lt;/td&gt;
+    &lt;td class=&quot;yes&quot;&gt;YES&lt;/td&gt;
+    &lt;td class=&quot;no-wd&quot;&gt;NO&lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr class=&quot;odd&quot;&gt;
+    &lt;th class=&quot;cmd&quot;&gt;checkout [commit]&lt;/th&gt;
+    &lt;td class=&quot;yes&quot;&gt;HEAD&lt;/td&gt;
+    &lt;td class=&quot;yes&quot;&gt;YES&lt;/td&gt;
+    &lt;td class=&quot;yes&quot;&gt;YES&lt;/td&gt;
+    &lt;td class=&quot;yes-wd&quot;&gt;YES&lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr class=&quot;level&quot;&gt;
+    &lt;th&gt;File Level&lt;/th&gt;
+    &lt;td colspan=&quot;4&quot;&gt;&amp;nbsp;&lt;/th&gt;
+  &lt;/tr&gt;
+  &lt;tr class=&quot;even&quot;&gt;
+    &lt;th class=&quot;cmd&quot;&gt;reset (commit) [file]&lt;/th&gt;
+    &lt;td class=&quot;no&quot;&gt;NO&lt;/td&gt;
+    &lt;td class=&quot;yes&quot;&gt;YES&lt;/td&gt;
+    &lt;td class=&quot;no&quot;&gt;NO&lt;/td&gt;
+    &lt;td class=&quot;yes-wd&quot;&gt;YES&lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr class=&quot;odd&quot;&gt;
+    &lt;th class=&quot;cmd&quot;&gt;checkout (commit) [file]&lt;/th&gt;
+    &lt;td class=&quot;no&quot;&gt;NO&lt;/td&gt;
+    &lt;td class=&quot;yes&quot;&gt;YES&lt;/td&gt;
+    &lt;td class=&quot;yes&quot;&gt;YES&lt;/td&gt;
+    &lt;td class=&quot;no-wd&quot;&gt;NO&lt;/td&gt;
+  &lt;/tr&gt;
+&lt;/table&gt;
+
+&lt;p&gt;Good night, and good luck.&lt;/p&gt;
+
+</description>
+</item>
+<item>
+<title> Notes</title>
+<guid>http://git-scm.com/blog/2010/08/25/notes.html</guid>
+<link>http://git-scm.com/blog/2010/08/25/notes.html</link>
+<pubDate>Wed, 25 Aug 2010 00:00:00 +0000</pubDate>
+<description>&lt;p&gt;One of the cool things about Git is that it has strong cryptographic 
+integrity.  If you change any bit in the commit data or any of the files it
+keeps, all the checksums change, including the commit SHA and every commit
+SHA since that one.  However, that means that in order to amend the commit
+in any way, for instance to add some comments on something or even sign off
+on a commit, you have to change the SHA of the commit itself.&lt;/p&gt;
+
+&lt;p&gt;Wouldn&amp;#39;t it be nice if you could add data to a commit without changing its
+SHA?  If only there existed an external mechanism to attach data to a commit
+without modifying the commit message itself.  Happy day!  It turns out there
+exists just such a feature in newer versions of Git!  As we can see from the
+Git 1.6.6 release notes where this new functionality was first introduced:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;* &amp;quot;git notes&amp;quot; command to annotate existing commits.
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Need any more be said?  Well, maybe.  How do you use it?  What does it do?
+How can it be useful?  I&amp;#39;m not sure I can answer all of these questions, but
+let&amp;#39;s give it a try.  First of all, how does one use it? &lt;/p&gt;
+
+&lt;p&gt;Well, to add a note to a specific commit, you only need to run 
+&lt;code&gt;git notes add [commit]&lt;/code&gt;, like this:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git notes add HEAD
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;This will open up your editor to write your commit message.  You can also use
+the &lt;code&gt;-m&lt;/code&gt; option to provide the note right on the command line:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git notes add -m &amp;#39;I approve - Scott&amp;#39; master~1
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;That will add a note to the first parent on the last commit on the master 
+branch.  Now, how to view these notes?  The easiest way is with the &lt;code&gt;git log&lt;/code&gt;
+command.&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git log master
+commit 0385bcc3bc66d1b1ec07346c237061574335c3b8
+Author: Ryan Tomayko &amp;lt;rtomayko@gmail.com&amp;gt;
+Date:   Tue Jun 22 20:09:32 2010 -0700
+
+  yield to run block right before accepting connections
+
+commit 06ca03a20bb01203e2d6b8996e365f46cb6d59bd
+Author: Ryan Tomayko &amp;lt;rtomayko@gmail.com&amp;gt;
+Date:   Wed May 12 06:47:15 2010 -0700
+
+  no need to delete these header names now
+
+Notes:
+  I approve - Scott
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;You can see the notes appended automatically in the log output.  You can only
+have one note per commit in a namespace though (I will explain namespaces in
+the next section), so if you want to add a note to that commit, you have to
+instead edit the existing one.  You can either do this by running:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git notes edit master~1
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Which will open a text editor with the existing note so you can edit it:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;I approve - Scott
+
+#
+# Write/edit the notes for the following object:
+#
+# commit 06ca03a20bb01203e2d6b8996e365f46cb6d59bd
+# Author: Ryan Tomayko &amp;lt;rtomayko@gmail.com&amp;gt;
+# Date:   Wed May 12 06:47:15 2010 -0700
+# 
+#     no need to delete these header names now
+# 
+#  kidgloves.rb |    2 --
+#  1 files changed, 0 insertions(+), 2 deletions(-)
+~                                                                               
+~                                                                               
+~                                                                               
+&amp;quot;.git/NOTES_EDITMSG&amp;quot; 13L, 338C
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Sort of weird, but it works.  If you just want to add something to the end of
+an existing note, you can run &lt;code&gt;git notes append SHA&lt;/code&gt;, but only in newer
+versions of Git (I think 1.7.1 and above).&lt;/p&gt;
+
+&lt;h2&gt;Notes Namespaces&lt;/h2&gt;
+
+&lt;p&gt;Since you can only have one note per commit, Git allows you to have multiple
+namespaces for your notes.  The default namespace is called &amp;#39;commits&amp;#39;, but 
+you can change that.  Let&amp;#39;s say we&amp;#39;re using the &amp;#39;commits&amp;#39; notes namespace to
+store general comments but we want to also store bugzilla information for our
+commits.  We can also have a &amp;#39;bugzilla&amp;#39; namespace.  Here is how we would add 
+a bug number to a commit under the bugzilla namespace:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git notes --ref=bugzilla add -m &amp;#39;bug #15&amp;#39; 0385bcc3
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;However, now you have to tell Git to specifically look in that namespace:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git log --show-notes=bugzilla
+commit 0385bcc3bc66d1b1ec07346c237061574335c3b8
+Author: Ryan Tomayko &amp;lt;rtomayko@gmail.com&amp;gt;
+Date:   Tue Jun 22 20:09:32 2010 -0700
+
+  yield to run block right before accepting connections
+
+Notes (bugzilla):
+  bug #15
+
+commit 06ca03a20bb01203e2d6b8996e365f46cb6d59bd
+Author: Ryan Tomayko &amp;lt;rtomayko@gmail.com&amp;gt;
+Date:   Wed May 12 06:47:15 2010 -0700
+
+  no need to delete these header names now
+
+Notes:
+  I approve - Scott
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Notice that it also will show your normal notes.  You can actually have it show
+notes from all your namespaces by running &lt;code&gt;git log --show-notes=*&lt;/code&gt; - if you
+have a lot of them, you may want to just alias that.  Here is what your log
+output might look like if you have a number of notes namespaces:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git log -1 --show-notes=*
+commit 0385bcc3bc66d1b1ec07346c237061574335c3b8
+Author: Ryan Tomayko &amp;lt;rtomayko@gmail.com&amp;gt;
+Date:   Tue Jun 22 20:09:32 2010 -0700
+
+    yield to run block right before accepting connections
+
+Notes:
+    I approve of this, too - Scott
+
+Notes (bugzilla):
+    bug #15
+
+Notes (build):
+    build successful (8/13/10)
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;You can also switch the current namespace you&amp;#39;re using so that the default for
+writing and showing notes is not &amp;#39;commits&amp;#39; but, say, &amp;#39;bugzilla&amp;#39; instead.  If you
+export the variable &lt;code&gt;GIT_NOTES_REF&lt;/code&gt; to point to something different, then the
+&lt;code&gt;--ref&lt;/code&gt; and &lt;code&gt;--show-notes&lt;/code&gt; options are not neccesary.  For example:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ export GIT_NOTES_REF=refs/notes/bugzilla
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;That will set your default to &amp;#39;bugzilla&amp;#39; instead.  It has to start with the &amp;#39;refs/notes/&amp;#39; though.&lt;/p&gt;
+
+&lt;h2&gt;Sharing Notes&lt;/h2&gt;
+
+&lt;p&gt;Now, here is where the general usability of this really breaks down.  I am
+hoping that this will be improved in the future and I put off writing this post
+because of my concern with this phase of the process, but I figured it has 
+interesting enough functionality as-is that someone might want to play with it.&lt;/p&gt;
+
+&lt;p&gt;So, the notes (as you may have noticed in the previous section) are stored as
+references, just like branches and tags.  This means you can push them to a 
+server.  However, Git has a bit of magic built in to expand a branch name 
+like &amp;#39;master&amp;#39; to what it really is, which is &amp;#39;refs/heads/master&amp;#39;. Unfortunately,
+Git has no such magic built in for notes.  So, to push your notes to a server,
+you cannot simply run something like &lt;code&gt;git push origin bugzilla&lt;/code&gt;.  Git will do 
+this:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git push origin bugzilla
+error: src refspec bugzilla does not match any.
+error: failed to push some refs to &amp;#39;git@github.com:schacon/kidgloves.git&amp;#39;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;However, you can push anything under &amp;#39;refs/&amp;#39; to a server, you just need to be
+more explicit about it.  If you run this it will work fine:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git push origin refs/notes/bugzilla
+Counting objects: 3, done.
+Delta compression using up to 2 threads.
+Compressing objects: 100% (2/2), done.
+Writing objects: 100% (3/3), 263 bytes, done.
+Total 3 (delta 0), reused 0 (delta 0)
+To git@github.com:schacon/kidgloves.git
+ * [new branch]      refs/notes/bugzilla -&amp;gt; refs/notes/bugzilla
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;In fact, you may want to just make that &lt;code&gt;git push origin refs/notes/*&lt;/code&gt; which
+will push all your notes.  This is what Git does normally for something like
+tags.  When you run &lt;code&gt;git push origin --tags&lt;/code&gt; it basically expands to 
+&lt;code&gt;git push origin refs/tags/*&lt;/code&gt;.&lt;/p&gt;
+
+&lt;h2&gt;Getting Notes&lt;/h2&gt;
+
+&lt;p&gt;Unfortunately, getting notes is even more difficult.  Not only is there no
+&lt;code&gt;git fetch --notes&lt;/code&gt; or something, you have to specify both sides of the 
+refspec (as far as I can tell).&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git fetch origin refs/notes/*:refs/notes/*
+remote: Counting objects: 12, done.
+remote: Compressing objects: 100% (8/8), done.
+remote: Total 12 (delta 0), reused 0 (delta 0)
+Unpacking objects: 100% (12/12), done.
+From github.com:schacon/kidgloves
+ * [new branch]      refs/notes/bugzilla -&amp;gt; refs/notes/bugzilla
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;That is basically the only way to get them into your repository from the server.
+Yay.  If you want to, you can setup your Git config file to automatically pull
+them down though.  If you look at your &lt;code&gt;.git/config&lt;/code&gt; file you should have a 
+section that looks like this:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;[remote &amp;quot;origin&amp;quot;]
+  fetch = +refs/heads/*:refs/remotes/origin/*
+  url = git@github.com:schacon/kidgloves.git
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;The &amp;#39;fetch&amp;#39; line is the refspec of what Git will try to do if you run just
+&lt;code&gt;git fetch origin&lt;/code&gt;.  It contains the magic formula of what Git will fetch and
+store local references to.  For instance, in this case it will take every 
+branch on the server and give you a local branch under &amp;#39;remotes/origin/&amp;#39; so 
+you can reference the &amp;#39;master&amp;#39; branch on the server as &amp;#39;remotes/origin/master&amp;#39;
+or just &amp;#39;origin/master&amp;#39; (it will look under &amp;#39;remotes&amp;#39; when it&amp;#39;s trying to
+figure out what you&amp;#39;re doing).  If you change that line to 
+&lt;code&gt;fetch = +refs/heads/*:refs/remotes/manamana/*&lt;/code&gt; then even though your remote
+is named &amp;#39;origin&amp;#39;, the master branch from your &amp;#39;origin&amp;#39; server will be under 
+&amp;#39;manamana/master&amp;#39;.  &lt;/p&gt;
+
+&lt;p&gt;Anyhow, you can use this to make your notes fetching easier.  If you add 
+multiple &lt;code&gt;fetch&lt;/code&gt; lines, it will do them all.  So in addition to the current
+&lt;code&gt;fetch&lt;/code&gt; line, you can add a line that looks like this:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;  fetch = +refs/notes/*:refs/notes/*
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Which says also get all the notes references on the server and store them 
+as though they were local notes.  Or you can namespace them if you want, but
+that can cause issues when you try to push them back again.&lt;/p&gt;
+
+&lt;h2&gt;Collaborating on Notes&lt;/h2&gt;
+
+&lt;p&gt;Now, this is where the main problem is.  Merging notes is super difficult.
+This means that if you pull down someone&amp;#39;s notes, you edit any note in a
+namespace locally and the other developer edits any note in that same namespace,
+you&amp;#39;re going to have a hard time getting them back in sync.  When the second
+person tries to push their notes it will look like a non-fast-forward just 
+like a normal branch update, but unlike a normal branch you can&amp;#39;t just run
+&lt;code&gt;git pull&lt;/code&gt; and then try again.  You have to check out your notes ref as if it
+were a normal branch, which will look ridiculously confusing and then do the 
+merge and then switch back.  It is do-able, but probably not something you
+really want to do.&lt;/p&gt;
+
+&lt;p&gt;Because of this, it&amp;#39;s probably best to namespace your notes or better
+just have an automated process create them (like build statuses or bugzilla
+artifacts).  If only one entity is updating your notes, you won&amp;#39;t have merge
+issues.  However, if you want to use them to comment on commits within a team,
+it is going to be a bit painful.&lt;/p&gt;
+
+&lt;p&gt;So far, I&amp;#39;ve heard of people using them to have their ticketing system attach 
+metadata automatically or have
+&lt;a href=&quot;http://article.gmane.org/gmane.comp.version-control.git/109074&quot;&gt;a system&lt;/a&gt;
+attach associated mailing list emails 
+to commits they concern. 
+Other people just use them entirely locally without pushing them
+anywhere to store reminders for themselves and whatnot.&lt;br&gt;
+Probably a good start, but the ambitious among you may come up with
+something else interesting to do.  Let me know!&lt;/p&gt;
+</description>
+</item>
+<item>
+<title> Pro Git Zh</title>
+<guid>http://git-scm.com/blog/2010/06/09/pro-git-zh.html</guid>
+<link>http://git-scm.com/blog/2010/06/09/pro-git-zh.html</link>
+<pubDate>Wed, 9 Jun 2010 00:00:00 +0000</pubDate>
+<description>&lt;p&gt;The amazing &lt;a href=&quot;http://chunzi.me/&quot;&gt;Chunzi&lt;/a&gt;, in addition to translating 
+and helping to coordinate the translation of the Chinese version of Pro Git, 
+has just sent me a draft epub of the book in Chinese.&lt;/p&gt;
+
+&lt;p&gt;As he says:&lt;/p&gt;
+
+&lt;p&gt;&amp;quot;下载地址：http://cl.ly/da7a450319adfac01108&lt;/p&gt;
+
+&lt;p&gt;此书基本完成翻译，但仍有大半尚未审阅。今心血来潮，做了 epub 版本，可在 iPad 上阅读。生成代码在 http://github.com/chunzi/progit/tree/master/epub-zh。&lt;/p&gt;
+
+&lt;p&gt;既然是开源图书，所以优先级比较低。后续更新时再作新版。&amp;quot;&lt;/p&gt;
+
+&lt;p&gt;I have also uploaded the file to S3 in addition to his cl.ly link.  If you want
+Pro Git in Chinese on your iPad, you can download it
+&lt;a href=&quot;https://github.s3.amazonaws.com/media/progit-zh.epub&quot;&gt;here&lt;/a&gt;.&lt;/p&gt;
+
+&lt;p&gt;祝你好运！&lt;/p&gt;
+</description>
+</item>
+<item>
+<title> Pro Git On Kindle</title>
+<guid>http://git-scm.com/blog/2010/06/06/pro-git-on-kindle.html</guid>
+<link>http://git-scm.com/blog/2010/06/06/pro-git-on-kindle.html</link>
+<pubDate>Sun, 6 Jun 2010 00:00:00 +0000</pubDate>
+<description>&lt;p&gt;When Pro Git was first released, I asked about being able to get it on my Kindle.  In fact, one of the very first people to read the book was &lt;a href=&quot;http://twitter.com/adelcambre&quot;&gt;@adelcambre&lt;/a&gt; with a mobi file I generated myself.  It was horrible looking, because I didn&amp;#39;t do it very well, but it did work. My editor at Apress wanted to get a professional Kindle version produced, but wasn&amp;#39;t sure if it was going to get done anytime soon. &lt;/p&gt;
+
+&lt;p&gt;Well, I just randomly found out that it did in fact finally get done.  About 9 months after it was first published, I saw on my Amazon referal account that I had sold a Kindle version, which confused me.  However, I went to Amazon and there it was:&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&quot;http://www.amazon.com/gp/product/B003NHRMXA?ie=UTF8&amp;tag=prgi-20&amp;linkCode=as2&amp;camp=1789&amp;creative=390957&amp;creativeASIN=B003NHRMXA&quot;&gt;&lt;img border=&quot;0&quot; src=&quot;http://ecx.images-amazon.com/images/I/51joD88JCAL._SL500_AA266_PIkin2,BottomRight,-3,34_AA300_SH20_OU01_.jpg&quot;&gt;&lt;/a&gt;&lt;img src=&quot;http://www.assoc-amazon.com/e/ir?t=prgi-20&amp;l=as2&amp;o=1&amp;a=B003NHRMXA&quot; width=&quot;1&quot; height=&quot;1&quot; border=&quot;0&quot; alt=&quot;&quot; style=&quot;border:none !important; margin:0px !important;&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;I assume it looks much, much better than the version I originally did for Andy.  (I should probably get myself a copy).  So, if you feel like reading it on the Kindle, &lt;a href=&quot;http://www.amazon.com/gp/product/B003NHRMXA?ie=UTF8&amp;tag=prgi-20&amp;linkCode=as2&amp;camp=1789&amp;creative=390957&amp;creativeASIN=B003NHRMXA&quot;&gt;have at it&lt;/a&gt;.  There have also been a number of people who have asked me how they can support the book without getting a dead-tree version, so here&amp;#39;s your chance.  You can even get a Kindle reader for your computer, so you can search through it and whatnot.  Enjoy!&lt;/p&gt;
+</description>
+</item>
+<item>
+<title> Progit For The Ipad</title>
+<guid>http://git-scm.com/blog/2010/05/17/progit-for-the-ipad.html</guid>
+<link>http://git-scm.com/blog/2010/05/17/progit-for-the-ipad.html</link>
+<pubDate>Mon, 17 May 2010 00:00:00 +0000</pubDate>
+<description>&lt;p&gt;The awesome guys at &lt;a href=&quot;http://mediatemple.net/&quot;&gt;Media Temple&lt;/a&gt; have converted
+the Pro Git book into ePub format that looks great on the iBook reader on the iPad.&lt;/p&gt;
+
+&lt;p&gt;You can download it 
+&lt;a href=&quot;https://github.s3.amazonaws.com/media/progit.epub&quot;&gt;here&lt;/a&gt;
+and just drop the ePub file onto iTunes to upload it into your iPad.  For reading
+Pro Git on the road, this is a great format and MT did an amazing job at making it
+look good on that platform.&lt;/p&gt;
+
+&lt;p&gt;Check it out - here is Pro Git in your bookshelf:&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;http://img.skitch.com/20100517-bn9jr7ax9k13ef2697srtjndyk.png&quot;/&gt;&lt;/p&gt;
+
+&lt;p&gt;The title page:&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;http://img.skitch.com/20100517-kac78crfcik9t36miyk7aam416.png&quot;/&gt;&lt;/p&gt;
+
+&lt;p&gt;And a chapter with illustrations:&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;http://img.skitch.com/20100517-jq3qnwr4w2xs27q8bnwpbay24k.png&quot;/&gt;&lt;/p&gt;
+
+&lt;p&gt;Sweet - thanks guys!&lt;/p&gt;
+
+&lt;p&gt;&lt;em&gt;Update:&lt;/em&gt; I&amp;#39;ve added a Stanza Atom catalog feed for those of you who want to load
+the epub book onto your Android running &lt;a href=&quot;http://www.aldiko.com/&quot;&gt;Aldiko&lt;/a&gt;
+or iPhone running &lt;a href=&quot;http://www.lexcycle.com/&quot;&gt;Stanza&lt;/a&gt;. To download the 
+book, simply add a custom catalog with this URL:&lt;/p&gt;
+
+&lt;pre&gt;
+  http://progit.org/stanza.atom
+&lt;/pre&gt;
+</description>
+</item>
+<item>
+<title> Progit Cliffnotes</title>
+<guid>http://git-scm.com/blog/2010/04/22/progit-cliffnotes.html</guid>
+<link>http://git-scm.com/blog/2010/04/22/progit-cliffnotes.html</link>
+<pubDate>Thu, 22 Apr 2010 00:00:00 +0000</pubDate>
+<description>&lt;p&gt;Jason Meridth has gone through the whole Pro Git book and compiled a list of notes of some
+useful tips and whatnot in the book.  If you have the print version, he marks which pages 
+all the tips were found on.  &lt;/p&gt;
+
+&lt;p&gt;I thought it might be a useful companion, you can find it
+&lt;a href=&quot;http://www.lostechies.com/blogs/jason_meridth/archive/2010/04/05/quot-pro-git-quot-cliff-notes.aspx&quot;&gt;here&lt;/a&gt;.&lt;/p&gt;
+</description>
+</item>
+<item>
+<title> Environment</title>
+<guid>http://git-scm.com/blog/2010/04/11/environment.html</guid>
+<link>http://git-scm.com/blog/2010/04/11/environment.html</link>
+<pubDate>Sun, 11 Apr 2010 00:00:00 +0000</pubDate>
+<description>&lt;p&gt;One of the things that people that come from the Subversion world tend
+to find pretty cool about Git is that there is no &lt;code&gt;.svn&lt;/code&gt; directory in
+every subdirectory of your project, but instead just one &lt;code&gt;.git&lt;/code&gt; directory
+in the root of your project.  Actually, it&amp;#39;s even better than that.
+The &lt;code&gt;.git&lt;/code&gt; directory does not even need to actually be within your project.
+Git allows you to tell it where your &lt;code&gt;.git&lt;/code&gt; directory is, and there are
+a couple of ways to do that.&lt;/p&gt;
+
+&lt;p&gt;Let&amp;#39;s say you have your project and want to move the &lt;code&gt;.git&lt;/code&gt; directory 
+somewhere else.  First let&amp;#39;s see what happens when we move our &lt;code&gt;.git&lt;/code&gt;
+directory without telling Git.&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git log --oneline
+6e948ec my second commit
+fda8c93 my initial commit
+$ mv .git /opt/myproject.git
+$ git log
+fatal: Not a git repository (or any of the parent directories): .git
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Well, since Git can&amp;#39;t find a &lt;code&gt;.git&lt;/code&gt; directory, it appears that you are
+simply in a directory that is not controlled by Git.  However, it&amp;#39;s
+pretty easy to tell Git to look elsewhere by providing the &lt;code&gt;--git-dir&lt;/code&gt;
+option to any Git call:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git --git-dir=/opt/myproject.git log --oneline
+6e948ec my second commit
+fda8c93 my initial commit
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;However, you probably don&amp;#39;t want to do that for every Git call, as
+that is a lot of typing.  You could create a shell alias, but you can
+also export an environment variable called &lt;code&gt;GIT_DIR&lt;/code&gt;.&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ export GIT_DIR=/opt/myproject.git
+$ git log --oneline
+6e948ec my second commit
+fda8c93 my initial commit
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;There are a number of ways to customize Git functionality via specific 
+environment variables.  You can also tell Git where your working directory
+is with &lt;code&gt;GIT_WORK_TREE&lt;/code&gt;, so you can run the Git commands from any
+directory you are in, not just the current working directory. To see this,
+first we&amp;#39;ll change a file and then change directories and run &lt;code&gt;git status&lt;/code&gt;.&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ echo &amp;#39;test&amp;#39; &amp;gt;&amp;gt; README 
+$ git status --short
+M README
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;OK, but now if we change working directories, we&amp;#39;ll get weird output.&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ cd /tmp
+$ git status --short
+ D README
+ ?? .ksda.1F5/
+ ?? aprKhGx02
+ ?? qlm.log
+ ?? qlmlog.txt
+ ?? smsi02122
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Now Git is comparing your last commit to what is in your current working 
+directory.  However, you can tell it where your real Git working directory
+is without being in it, either with the &lt;code&gt;--work-tree&lt;/code&gt; option or by exporting
+the &lt;code&gt;GIT_WORK_TREE&lt;/code&gt; variable:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git --work-tree=/tmp/myproject status --short
+ M README
+$ export GIT_WORK_TREE=/tmp/myproject
+$ git status --short
+ M README
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Now you&amp;#39;re doing operations on a Git repository outside of your working
+directory, which you&amp;#39;re not even in.&lt;/p&gt;
+
+&lt;p&gt;The last interesting variable you can set is your staging area.  That
+is normally in the &lt;code&gt;.git/index&lt;/code&gt; file, but again, you can set it somewhere
+else, so that you can have multiple staging areas that you can switch
+between if you want.&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ export GIT_INDEX_FILE=/tmp/index1
+$ git add README
+$ git status
+# On branch master
+# Changes to be committed:
+#   (use &amp;quot;git reset HEAD &amp;lt;file&amp;gt;...&amp;quot; to unstage)
+#
+# modified:   README
+#
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Now we have the README file changed staged in the new index file.  If we
+switch back to our original index, we can see that the file is no longer
+staged:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ export GIT_INDEX_FILE=/opt/myproject.git/index
+$ git status
+# On branch master
+# Changed but not updated:
+#   (use &amp;quot;git add &amp;lt;file&amp;gt;...&amp;quot; to update what will be committed)
+#   (use &amp;quot;git checkout -- &amp;lt;file&amp;gt;...&amp;quot; to discard changes in working directory)
+#
+# modified:   README
+#
+no changes added to commit (use &amp;quot;git add&amp;quot; and/or &amp;quot;git commit -a&amp;quot;)
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;This is not quite as useful in day to day work, but it is pretty cool for 
+building arbitrary trees and whatnot.  We&amp;#39;ll explore how to use that to 
+do neat things in a future post when we talk more about some of the lower
+level Git plumbing commands.&lt;/p&gt;
+</description>
+</item>
+<item>
+<title> Replace</title>
+<guid>http://git-scm.com/blog/2010/03/17/replace.html</guid>
+<link>http://git-scm.com/blog/2010/03/17/replace.html</link>
+<pubDate>Wed, 17 Mar 2010 00:00:00 +0000</pubDate>
+<description>&lt;p&gt;In another of my series of &amp;quot;seemingly hidden Git features&amp;quot;, I would like to
+introduce &lt;code&gt;git replace&lt;/code&gt;.  Now, documentation exists for &lt;code&gt;git replace&lt;/code&gt;, but it
+is rather unclear on what you would actually use it for (or even what it really
+does), so let&amp;#39;s go through a couple of examples as it really is quite powerful.&lt;/p&gt;
+
+&lt;p&gt;The &lt;code&gt;replace&lt;/code&gt; command basically will take one object in your Git database and
+for most purposes replace it with another object.  This is most commonly useful
+for replacing one commit in your history with another one.&lt;/p&gt;
+
+&lt;p&gt;For example, say you want to split your history into one short history for
+new developers and one much longer and larger history for people interested
+in data mining.  You can graft one history onto the other by &lt;code&gt;replace&lt;/code&gt;ing
+the earliest commit in the new line with the latest commit on the older one.  This
+is nice because it means that you don&amp;#39;t actually have to rewrite every commit
+in the new history, as you would normally have to do to join them together
+(because the parentage effects the SHAs).&lt;/p&gt;
+
+&lt;p&gt;Let&amp;#39;s try this out.  Let&amp;#39;s take an existing repository, split it into two
+repositories, one recent and one historical, and then we&amp;#39;ll see how we can
+recombine them without modifying the recent repositories SHA values via &lt;code&gt;replace&lt;/code&gt;.&lt;/p&gt;
+
+&lt;p&gt;We&amp;#39;ll use a simple repository with five simple commits:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git log --oneline
+ef989d8 fifth commit
+c6e1e95 fourth commit
+9c68fdc third commit
+945704c second commit
+c1822cf first commit
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;We want to break this up into two lines of history.  One line goes from commit
+one to commit four - that will be the historical one.  The second line will
+just be commits four and five - that will be the recent history.&lt;/p&gt;
+
+&lt;p&gt;&lt;center&gt;&lt;img src=&quot;/images/replace1.png&quot;&gt;&lt;/center&gt;&lt;/p&gt;
+
+&lt;p&gt;Well, creating the historical history is easy, we can just put a branch in the
+history and then push that branch to the master branch of a new remote repository.&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git branch history c6e1e95
+$ git log --oneline --decorate
+ef989d8 (HEAD, master) fifth commit
+c6e1e95 (history) fourth commit
+9c68fdc third commit
+945704c second commit
+c1822cf first commit
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;&lt;center&gt;&lt;img src=&quot;/images/replace2.png&quot;&gt;&lt;/center&gt;&lt;/p&gt;
+
+&lt;p&gt;Now we can push the new history branch to the master branch of our new repository:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git remote add history git@github.com:schacon/project-history.git
+$ git push history history:master
+Counting objects: 12, done.
+Delta compression using up to 2 threads.
+Compressing objects: 100% (4/4), done.
+Writing objects: 100% (12/12), 907 bytes, done.
+Total 12 (delta 0), reused 0 (delta 0)
+Unpacking objects: 100% (12/12), done.
+To git@github.com:schacon/project-history.git
+ * [new branch]      history -&amp;gt; master
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;OK, so our history is published.  Now the harder part is truncating our current
+history down so it&amp;#39;s smaller.  We need an overlap so we can replace a commit
+in one with an equivalent commit in the other, so we&amp;#39;re going to truncate this
+to just commits four and five (so commit four overlaps).&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git log --oneline --decorate
+ef989d8 (HEAD, master) fifth commit
+c6e1e95 (history) fourth commit
+9c68fdc third commit
+945704c second commit
+c1822cf first commit
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;I think it&amp;#39;s useful in this case to create a base commit that has instructions
+on how to expand the history, so other developers know what to do if they
+hit the first commit in the truncated history and need more.  So, what we&amp;#39;re
+going to do is create an initial commit object as our base point with instructions,
+then rebase the remaining commits (four and five) on top of it.  To do that,
+we need to choose a point to split at, which for us is the third commit, which
+is &lt;code&gt;9c68fdc&lt;/code&gt; in SHA-speak.  So, our base commit will be based off of that tree.
+We can create our base commit using the &lt;code&gt;commit-tree&lt;/code&gt; command, which just takes
+a tree and will give us a brand new, parentless commit object SHA back.&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ echo &amp;#39;get history from blah blah blah&amp;#39; | git commit-tree 9c68fdc^{tree}
+622e88e9cbfbacfb75b5279245b9fb38dfea10cf
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;&lt;center&gt;&lt;img src=&quot;/images/replace3.png&quot;&gt;&lt;/center&gt;&lt;/p&gt;
+
+&lt;p&gt;OK, so now that we have a base commit, we can rebase the rest of our history
+on top of that with &lt;code&gt;git rebase --onto&lt;/code&gt;.  The &lt;code&gt;--onto&lt;/code&gt; argument will be the
+SHA we just got back from &lt;code&gt;commit-tree&lt;/code&gt; and the rebase point will be the third
+commit (&lt;code&gt;9c68fdc&lt;/code&gt; again):&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git rebase --onto 622e88 9c68fdc
+First, rewinding head to replay your work on top of it...
+Applying: fourth commit
+Applying: fifth commit
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;&lt;center&gt;&lt;img src=&quot;/images/replace4.png&quot;&gt;&lt;/center&gt;&lt;/p&gt;
+
+&lt;p&gt;OK, so now we&amp;#39;ve re-written our recent history on top of a throw away base commit
+that now has instructions in it on how to reconstitute the entire history if
+we wanted to. Now let&amp;#39;s see what those instructions would be (here is where
+&lt;code&gt;replace&lt;/code&gt; finally comes into play).&lt;/p&gt;
+
+&lt;p&gt;So to get the history data after cloning this truncated repository, one would
+have to add a remote for the historical repository and fetch:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git remote add history git://github.com/schacon/project-history.git
+$ git fetch history
+From git://github.com/schacon/project-history.git
+ * [new branch]      master     -&amp;gt; history/master
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Now the collaborator would have their recent commits in the &amp;#39;master&amp;#39; branch
+and the historical commits in the &amp;#39;history/master&amp;#39; branch.&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git log --oneline master
+e146b5f fifth commit
+81a708d fourth commit
+622e88e get history from blah blah blah
+$ git log --oneline history/master
+c6e1e95 fourth commit
+9c68fdc third commit
+945704c second commit
+c1822cf first commit
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;To combine them, you can simply call &lt;code&gt;git replace&lt;/code&gt; with the commit you want
+to replace and then the commit you want to replace it with.  So we want to
+replace the &amp;#39;fourth&amp;#39; commit in the master branch with the &amp;#39;fourth&amp;#39; commit in
+the &amp;#39;history/master&amp;#39; branch:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git replace 81a708d c6e1e95
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Now, if you look at the history of the &lt;code&gt;master&lt;/code&gt; branch, it looks like this:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git log --oneline
+e146b5f fifth commit
+81a708d fourth commit
+9c68fdc third commit
+945704c second commit
+c1822cf first commit
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Cool, right?  Without having to change all the SHAs upstream, we were able to
+replace one commit in our history with an entirely different commit and all the
+normal tools (&lt;code&gt;bisect&lt;/code&gt;, &lt;code&gt;blame&lt;/code&gt;, etc) will work how we would expect them to.&lt;/p&gt;
+
+&lt;p&gt;&lt;center&gt;&lt;img src=&quot;/images/replace5.png&quot;&gt;&lt;/center&gt;&lt;/p&gt;
+
+&lt;p&gt;Interestingly, it still shows &lt;code&gt;81a708d&lt;/code&gt; as the SHA, even though it&amp;#39;s actually
+using the &lt;code&gt;c6e1e95&lt;/code&gt; commit data that we replaced it with.  Even if you run a
+command like &lt;code&gt;cat-file&lt;/code&gt;, it will show you the replaced data:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git cat-file -p 81a708d
+tree 7bc544cf438903b65ca9104a1e30345eee6c083d
+parent 9c68fdceee073230f19ebb8b5e7fc71b479c0252
+author Scott Chacon &amp;lt;schacon@gmail.com&amp;gt; 1268712581 -0700
+committer Scott Chacon &amp;lt;schacon@gmail.com&amp;gt; 1268712581 -0700
+
+fourth commit
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Remember that the actual parent of &lt;code&gt;81a708d&lt;/code&gt; was our placeholder commit (&lt;code&gt;622e88e&lt;/code&gt;),
+not &lt;code&gt;9c68fdce&lt;/code&gt; as it states here.&lt;/p&gt;
+
+&lt;p&gt;The other cool thing is that this is kept in our references:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git for-each-ref
+e146b5f14e79d4935160c0e83fb9ebe526b8da0d commit refs/heads/master
+c6e1e95051d41771a649f3145423f8809d1a74d4 commit refs/remotes/history/master
+e146b5f14e79d4935160c0e83fb9ebe526b8da0d commit refs/remotes/origin/HEAD
+e146b5f14e79d4935160c0e83fb9ebe526b8da0d commit refs/remotes/origin/master
+c6e1e95051d41771a649f3145423f8809d1a74d4 commit refs/replace/81a708dd0e167a3f691541c7a6463343bc457040
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;This means that it&amp;#39;s easy to share our replacement with others, because we can
+push this to our server and other people can easily download it.  This is not that
+helpful in the history grafting scenario we&amp;#39;ve gone over here (since everyone
+would be downloading both histories anyhow, so why seperate them?) but it can
+be useful in other circumstances.  I&amp;#39;ll cover some other interesting scenarios
+in another post - I think this is probably enough to process for now.&lt;/p&gt;
+</description>
+</item>
+<item>
+<title> Bundles</title>
+<guid>http://git-scm.com/blog/2010/03/10/bundles.html</guid>
+<link>http://git-scm.com/blog/2010/03/10/bundles.html</link>
+<pubDate>Wed, 10 Mar 2010 00:00:00 +0000</pubDate>
+<description>&lt;p&gt;The scenario is thus: you need to sneakernet a &lt;code&gt;git push&lt;/code&gt;.  Maybe your network
+is down and you want to send changes to your co-workers.  Perhaps you&amp;#39;re working
+somewhere onsite and don&amp;#39;t have access to the local network for security reasons.
+Maybe your wireless/ethernet card just broke.  Maybe you don&amp;#39;t have access to
+a shared server for the moment, you want to email someone updates and you don&amp;#39;t
+want to transfer 40 commits via &lt;code&gt;format-patch&lt;/code&gt;.&lt;/p&gt;
+
+&lt;p&gt;Enter &lt;code&gt;git bundle&lt;/code&gt;.  The &lt;code&gt;bundle&lt;/code&gt; command will package up everything that would
+normally be pushed over the wire with a &lt;code&gt;git push&lt;/code&gt; command into a binary file
+that you can email or sneakernet around, then unbundle into another repository.&lt;/p&gt;
+
+&lt;p&gt;Let&amp;#39;s see a simple example.  Let&amp;#39;s say you have a repository with two commits:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git log
+commit 9a466c572fe88b195efd356c3f2bbeccdb504102
+Author: Scott Chacon &amp;lt;schacon@gmail.com&amp;gt;
+Date:   Wed Mar 10 07:34:10 2010 -0800
+
+    second commit
+
+commit b1ec3248f39900d2a406049d762aa68e9641be25
+Author: Scott Chacon &amp;lt;schacon@gmail.com&amp;gt;
+Date:   Wed Mar 10 07:34:01 2010 -0800
+
+    first commit
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;If you want to send that repository to someone and you don&amp;#39;t have access to
+a repository to push to, or simply don&amp;#39;t want to set one up, you can bundle it.&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git bundle create repo.bundle master
+Counting objects: 6, done.
+Delta compression using up to 2 threads.
+Compressing objects: 100% (2/2), done.
+Writing objects: 100% (6/6), 441 bytes, done.
+Total 6 (delta 0), reused 0 (delta 0)
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Now you have a file named &lt;code&gt;repo.bundle&lt;/code&gt; that has all the data needed to re-create
+the repository.  You can email that to someone else, or put it on a USB drive
+and walk it over.&lt;/p&gt;
+
+&lt;p&gt;Now on the other side, say you are sent this &lt;code&gt;repo.bundle&lt;/code&gt; file and want to work
+on the project.&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git clone repo.bundle -b master repo
+Initialized empty Git repository in /private/tmp/bundle/repo/.git/
+$ cd repo
+$ git log --oneline
+9a466c5 second commit
+b1ec324 first commit
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;I had to specify &lt;code&gt;-b master&lt;/code&gt; because otherwise it couldn&amp;#39;t find the HEAD
+reference for some reason, but you may not need to do that.  The point is, you
+have now cloned directly from a file, rather than from a remote server.&lt;/p&gt;
+
+&lt;p&gt;Now let&amp;#39;s say you do three commits on it and want to send the new commits back
+via a bundle on a usb stick or email.&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git log --oneline
+71b84da last commit - second repo
+c99cf5b fourth commit - second repo
+7011d3d third commit - second repo
+9a466c5 second commit
+b1ec324 first commit
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;First we need to determine the range of commits we want to include in the bundle.
+The easiest way would have been to drop a branch when we started, so we could
+say &lt;code&gt;start_branch..master&lt;/code&gt; or &lt;code&gt;master ^start_branch&lt;/code&gt;, but if we didn&amp;#39;t we can
+just list the starting SHA explicitly:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git log --oneline master ^9a466c5
+71b84da last commit - second repo
+c99cf5b fourth commit - second repo
+7011d3d third commit - second repo
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;So we have the list of commits we want to include in the bundle, let&amp;#39;s bundle
+em up.  We do that with the &lt;code&gt;git bundle create&lt;/code&gt; command, giving it a filename
+we want our bundle to be and the range of commits we want to go into it.&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git bundle create commits.bundle master ^9a466c5
+Counting objects: 11, done.
+Delta compression using up to 2 threads.
+Compressing objects: 100% (3/3), done.
+Writing objects: 100% (9/9), 775 bytes, done.
+Total 9 (delta 0), reused 0 (delta 0)
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Now we will have a &lt;code&gt;commits.bundle&lt;/code&gt; file in our directory.  If we take that and
+send it to our partner, she can then import it into the original repository,
+even if more work has been done there in the meantime.&lt;/p&gt;
+
+&lt;p&gt;When she gets the bundle, she can inspect it to see what it contains before she
+imports it into her repository.  The first command is the &lt;code&gt;bundle verify&lt;/code&gt; command
+that will make sure the file is actually a valid Git bundle and that you have
+all the neccesary ancestors to reconstitute it properly.&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git bundle verify ../commits.bundle
+The bundle contains 1 ref
+71b84daaf49abed142a373b6e5c59a22dc6560dc refs/heads/master
+The bundle requires these 1 ref
+9a466c572fe88b195efd356c3f2bbeccdb504102 second commit
+../commits.bundle is okay
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;If the bundler had created a bundle of just the last two commits they had done,
+rather than all three, the original repository would not be able to import it,
+since it is missing requisite history.  The &lt;code&gt;verify&lt;/code&gt; command would have looked
+like this instead:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git bundle verify ../commits-bad.bundle
+error: Repository lacks these prerequisite commits:
+error: 7011d3d8fc200abe0ad561c011c3852a4b7bbe95 third commit - second repo
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;However, our first bundle is valid, so we can fetch in commits from it.  If you
+want to see what branches are in the bundle that can be imported, there is also
+a command to just list the heads:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git bundle list-heads ../commits.bundle
+71b84daaf49abed142a373b6e5c59a22dc6560dc refs/heads/master
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;The &lt;code&gt;verify&lt;/code&gt; sub-command will tell you the heads, too, as will a normal
+&lt;code&gt;git ls-remote&lt;/code&gt; command, which you may have used for debugging before.  The point
+is to see what can be pulled in, so you can use the &lt;code&gt;fetch&lt;/code&gt; or &lt;code&gt;pull&lt;/code&gt; commands
+to import commits from this bundle.  Here we&amp;#39;ll fetch the &amp;#39;master&amp;#39; branch of
+the bundle to a branch named &amp;#39;other-master&amp;#39; in our repository:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git fetch ../commits.bundle master:other-master
+From ../commits.bundle
+ * [new branch]      master     -&amp;gt; other-master
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Now we can see that we have the imported commits on the &amp;#39;other-master&amp;#39; branch
+as well as any commits we&amp;#39;ve done in the meantime in our own &amp;#39;master&amp;#39; branch.&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git log --oneline --decorate --graph --all
+* 8255d41 (HEAD, master) third commit - first repo
+| * 71b84da (other-master) last commit - second repo
+| * c99cf5b fourth commit - second repo
+| * 7011d3d third commit - second repo
+|/
+* 9a466c5 second commit
+* b1ec324 first commit
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;So, &lt;code&gt;git bundle&lt;/code&gt; can be really useful for doing network-y, share-y operations
+when you don&amp;#39;t have the proper network or shared repository to do so.&lt;/p&gt;
+</description>
+</item>
+<item>
+<title> Rerere</title>
+<guid>http://git-scm.com/blog/2010/03/08/rerere.html</guid>
+<link>http://git-scm.com/blog/2010/03/08/rerere.html</link>
+<pubDate>Mon, 8 Mar 2010 00:00:00 +0000</pubDate>
+<description>&lt;p&gt;One of the things I didn&amp;#39;t touch on at all in the book is the &lt;code&gt;git rerere&lt;/code&gt;
+functionality.  This also came up recently
+during one of my trainings, and I realize that a lot of people probably could
+use this, so I wanted to let you all now about it.&lt;/p&gt;
+
+&lt;p&gt;The &lt;a href=&quot;http://ftp.sunet.se/pub/Linux/kernel.org/software/scm/git/docs/git-rerere.html&quot;&gt;&lt;code&gt;git rerere&lt;/code&gt;&lt;/a&gt;
+functionality is a bit of a hidden feature (Git actually has
+a lot of cool hidden features, if you haven&amp;#39;t figured that out yet).  The name
+stands for &amp;quot;reuse recorded resolution&amp;quot; and as the name implies, it allows you
+to ask Git to remember how you&amp;#39;ve resolved a hunk conflict so that the next time
+it sees the same conflict, Git can automatically resolve it for you.&lt;/p&gt;
+
+&lt;p&gt;There are a number of scenarios in which this functionality might be really
+handy.  One of the examples that is mentioned in the documentation is if you
+want to make sure a long lived topic branch will merge cleanly but don&amp;#39;t want
+to have a bunch of intermediate merge commits. With &lt;code&gt;rerere&lt;/code&gt; turned on you
+can merge occasionally, resolve the conflicts, then back out the merge. If
+you do this continuously, then the final merge should be easy because &lt;code&gt;rerere&lt;/code&gt;
+can just do everything for you automatically.&lt;/p&gt;
+
+&lt;p&gt;This same tactic can be used if you want to keep a branch rebased so you don&amp;#39;t
+have to deal with the same rebasing conflicts each time you do it.  Or if you
+want to take a branch that you merged and fixed a bunch of conflicts and then
+decide to rebase it instead - you likely won&amp;#39;t have to do all the same conflicts
+again.&lt;/p&gt;
+
+&lt;p&gt;The other situation I can think of is where you merge a bunch of evolving
+topic branches together into a testable head occasionally.  If the tests fail,
+you can rewind the merges and re-do them without the topic branch that made the
+tests fail without having to re-resolve the conflicts again.&lt;/p&gt;
+
+&lt;p&gt;To enable the rerere functionality, you simply have to run this config setting:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git config --global rerere.enabled true
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;You can also turn it on by creating the &lt;code&gt;.git/rr-cache&lt;/code&gt; directory in a specific
+repository, but I think the config setting is clearer, and it can be done globally.&lt;/p&gt;
+
+&lt;p&gt;Now let&amp;#39;s see a simple example.  If we have a file that looks like this:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;#! /usr/bin/env ruby
+
+def hello
+  puts &amp;#39;hello world&amp;#39;
+end
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;and in one branch we change the word &amp;#39;hello&amp;#39; to &amp;#39;hola&amp;#39;, then in another branch
+we change the &amp;#39;world&amp;#39; to &amp;#39;mundo&amp;#39;.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/rerere1.png&quot;&gt;&lt;/p&gt;
+
+&lt;p&gt;When we merge the two branches together, we&amp;#39;ll get a merge conflict:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git merge i18n-world
+Auto-merging hello.rb
+CONFLICT (content): Merge conflict in hello.rb
+Recorded preimage for &amp;#39;hello.rb&amp;#39;
+Automatic merge failed; fix conflicts and then commit the result.
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;You should notice the new line &lt;code&gt;Recorded preimage for FILE&lt;/code&gt; in there.  Otherwise
+it should look exactly like a normal merge conflict.  At this point, &lt;code&gt;rerere&lt;/code&gt;
+can tell us some stuff. Normally, you might run &lt;code&gt;git status&lt;/code&gt; at this point to
+see what all conflicted:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git status
+# On branch master
+# Unmerged paths:
+#   (use &amp;quot;git reset HEAD &amp;lt;file&amp;gt;...&amp;quot; to unstage)
+#   (use &amp;quot;git add &amp;lt;file&amp;gt;...&amp;quot; to mark resolution)
+#
+#   both modified:      hello.rb
+#
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;However, &lt;code&gt;git rerere&lt;/code&gt; will also tell you what it has recorded the pre-merge
+state for with &lt;code&gt;git rerere status&lt;/code&gt;:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git rerere status
+hello.rb
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;And &lt;code&gt;git rerere diff&lt;/code&gt; will show the current state of the resolution - what you
+started with to resolve and what you&amp;#39;ve resolved it to.&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git rerere diff
+--- a/hello.rb
++++ b/hello.rb
+@@ -1,11 +1,11 @@
+ #! /usr/bin/env ruby
+
+ def hello
+-&amp;lt;&amp;lt;&amp;lt;&amp;lt;&amp;lt;&amp;lt;&amp;lt;
+-  puts &amp;#39;hello mundo&amp;#39;
+-=======
++&amp;lt;&amp;lt;&amp;lt;&amp;lt;&amp;lt;&amp;lt;&amp;lt; HEAD
+   puts &amp;#39;hola world&amp;#39;
+-&amp;gt;&amp;gt;&amp;gt;&amp;gt;&amp;gt;&amp;gt;&amp;gt;
++=======
++  puts &amp;#39;hello mundo&amp;#39;
++&amp;gt;&amp;gt;&amp;gt;&amp;gt;&amp;gt;&amp;gt;&amp;gt; i18n-world
+ end
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Also (and this isn&amp;#39;t really related to &lt;code&gt;rerere&lt;/code&gt;), you can use &lt;code&gt;ls-files -u&lt;/code&gt; to
+see the conflicted files and the before, left and right versions:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git ls-files -u
+100644 39804c942a9c1f2c03dc7c5ebcd7f3e3a6b97519 1   hello.rb
+100644 a440db6e8d1fd76ad438a49025a9ad9ce746f581 2   hello.rb
+100644 54336ba847c3758ab604876419607e9443848474 3   hello.rb
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Anyhow, so now you resolve it to just be &amp;quot;puts &amp;#39;hola mundo&amp;#39;&amp;quot; and you can run
+the &lt;code&gt;rerere diff&lt;/code&gt; command again to see what rerere will remember:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git rerere diff
+--- a/hello.rb
++++ b/hello.rb
+@@ -1,11 +1,7 @@
+ #! /usr/bin/env ruby
+
+ def hello
+-&amp;lt;&amp;lt;&amp;lt;&amp;lt;&amp;lt;&amp;lt;&amp;lt;
+-  puts &amp;#39;hello mundo&amp;#39;
+-=======
+-  puts &amp;#39;hola world&amp;#39;
+-&amp;gt;&amp;gt;&amp;gt;&amp;gt;&amp;gt;&amp;gt;&amp;gt;
++  puts &amp;#39;hola mundo&amp;#39;
+ end
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;So that basically says, when I see a hunk conflict that has &amp;#39;hello mundo&amp;#39; on
+one side and &amp;#39;hola world&amp;#39; on the other, resolve it to &amp;#39;hola mundo&amp;#39;.&lt;/p&gt;
+
+&lt;p&gt;Now we can mark it as resolved and commit it:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git add hello.rb
+$ git commit
+Recorded resolution for &amp;#39;hello.rb&amp;#39;.
+[master 68e16e5] Merge branch &amp;#39;i18n&amp;#39;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;You can see that it &amp;quot;Recorded resolution for FILE&amp;quot;.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/rerere2.png&quot;&gt;&lt;/p&gt;
+
+&lt;p&gt;Now, let&amp;#39;s undo
+that merge and then rebase it on top of our master branch instead.&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git reset --hard HEAD^
+HEAD is now at ad63f15 i18n the hello
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Our merge is undone.  Now let&amp;#39;s rebase the topic branch.&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git checkout i18n-world
+Switched to branch &amp;#39;i18n-world&amp;#39;
+$ git rebase master
+First, rewinding head to replay your work on top of it...
+Applying: i18n one word
+Using index info to reconstruct a base tree...
+Falling back to patching base and 3-way merge...
+Auto-merging hello.rb
+CONFLICT (content): Merge conflict in hello.rb
+Resolved &amp;#39;hello.rb&amp;#39; using previous resolution.
+Failed to merge in the changes.
+Patch failed at 0001 i18n one word
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Now, we got the same merge conflict like we expected, but check out the &lt;code&gt;Resolved
+FILE using previous resolution&lt;/code&gt; line.  If we look at the file, we&amp;#39;ll see that it&amp;#39;s
+already been resolved:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ cat hello.rb
+#! /usr/bin/env ruby
+
+def hello
+  puts &amp;#39;hola mundo&amp;#39;
+end
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Also, &lt;code&gt;git diff&lt;/code&gt; will show you how it was automatically re-resolved:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git diff
+diff --cc hello.rb
+index a440db6,54336ba..0000000
+--- a/hello.rb
++++ b/hello.rb
+@@@ -1,7 -1,7 +1,7 @@@
+  #! /usr/bin/env ruby
+
+  def hello
+-   puts &amp;#39;hola world&amp;#39;
+ -  puts &amp;#39;hello mundo&amp;#39;
+++  puts &amp;#39;hola mundo&amp;#39;
+  end
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/rerere3.png&quot;&gt;&lt;/p&gt;
+
+&lt;p&gt;You can also recreate the conflicted file state with the &lt;code&gt;checkout&lt;/code&gt; command:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git checkout --conflict=merge hello.rb
+$ cat hello.rb
+#! /usr/bin/env ruby
+
+def hello
+&amp;lt;&amp;lt;&amp;lt;&amp;lt;&amp;lt;&amp;lt;&amp;lt; ours
+  puts &amp;#39;hola world&amp;#39;
+=======
+  puts &amp;#39;hello mundo&amp;#39;
+&amp;gt;&amp;gt;&amp;gt;&amp;gt;&amp;gt;&amp;gt;&amp;gt; theirs
+end
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;That might be a new command to you as well, the &lt;code&gt;--conflict&lt;/code&gt; option to
+&lt;code&gt;git checkout&lt;/code&gt;.  You can actually have &lt;code&gt;checkout&lt;/code&gt; do a couple of things in
+this situation to help you resolve conflicts.  Another interesting value for
+that option is &amp;#39;diff3&amp;#39;, which will give you left, right and common to help you
+resolve the conflict manually:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git checkout --conflict=diff3 hello.rb
+$ cat hello.rb
+#! /usr/bin/env ruby
+
+def hello
+&amp;lt;&amp;lt;&amp;lt;&amp;lt;&amp;lt;&amp;lt;&amp;lt; ours
+  puts &amp;#39;hola world&amp;#39;
+|||||||
+  puts &amp;#39;hello world&amp;#39;
+=======
+  puts &amp;#39;hello mundo&amp;#39;
+&amp;gt;&amp;gt;&amp;gt;&amp;gt;&amp;gt;&amp;gt;&amp;gt; theirs
+end
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Anyhow, then you can re-resolve it by just running &lt;code&gt;rerere&lt;/code&gt; again:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git rerere
+Resolved &amp;#39;hello.rb&amp;#39; using previous resolution.
+$ cat hello.rb
+#! /usr/bin/env ruby
+
+def hello
+  puts &amp;#39;hola mundo&amp;#39;
+end
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Magical re-resolving! Then you can add and continue the rebase to complete it.&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git add hello.rb
+$ git rebase --continue
+Applying: i18n one word
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;So, if you do a lot of re-merges, or want to keep a topic branch up to date
+with your master branch without a ton of merges, or you rebase often or any
+of the above, turn on &lt;code&gt;rerere&lt;/code&gt; to help your life out a bit.&lt;/p&gt;
+</description>
+</item>
+<item>
+<title> Smart Http</title>
+<guid>http://git-scm.com/blog/2010/03/04/smart-http.html</guid>
+<link>http://git-scm.com/blog/2010/03/04/smart-http.html</link>
+<pubDate>Thu, 4 Mar 2010 00:00:00 +0000</pubDate>
+<description>&lt;p&gt;When I was done writing Pro Git, the only transfer protocols that existed were
+the &lt;code&gt;git://&lt;/code&gt;, &lt;code&gt;ssh://&lt;/code&gt; and basic &lt;code&gt;http://&lt;/code&gt; transports.  I wrote about the basic
+strengths and weaknesses of each in &lt;a href=&quot;/book/ch4-1.html&quot;&gt;Chapter 4&lt;/a&gt;.
+At the time, one of the big differences between Git and most other VCS&amp;#39;s was
+that HTTP was not a mainly used protocol - that&amp;#39;s because it was read-only and
+very inefficient.  Git would simply use the webserver to ask for individual
+objects and packfiles that it needed.  It would even ask for big packfiles even
+if it only needed one object from it.&lt;/p&gt;
+
+&lt;p&gt;As of the release of version 1.6.6 at the end of last year, however, Git can
+now use the HTTP protocol just about as efficiently as the &lt;code&gt;git&lt;/code&gt; or &lt;code&gt;ssh&lt;/code&gt;
+versions (thanks to the amazing work by Shawn Pearce, who also happened to have
+been the technical editor of Pro Git).  Amusingly, it has been given very little
+fanfare - the release notes for 1.6.6 state only this:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;* &amp;quot;git fetch&amp;quot; over http learned a new mode that is different from the
+  traditional &amp;quot;dumb commit walker&amp;quot;.
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Which is a huge understatement, given that I think this will become the
+standard Git protocol in the very near future.  I believe this because it&amp;#39;s
+both efficient and can be run either secure and authenticated (https) or open
+and unauthenticated (http).  It also has the huge advantage that most
+firewalls have those ports (80 and 443) open already and normal users don&amp;#39;t
+have to deal with &lt;code&gt;ssh-keygen&lt;/code&gt; and the like.  Once most clients have updated
+to at least v1.6.6, &lt;code&gt;http&lt;/code&gt; will have a big place in the Git world.&lt;/p&gt;
+
+&lt;h2&gt;What is &quot;Smart&quot; HTTP?&lt;/h2&gt;
+
+&lt;p&gt;Before version 1.6.6, Git clients, when you clone or fetch over HTTP would
+basically just do a series of GETs to grab individual objects and packfiles on
+the server from bare Git repositories, since it knows the layout of the repo.
+This functionality is documented fairly completely in &lt;a href=&quot;http://progit.org/book/ch9-6.html&quot;&gt;Chapter 9&lt;/a&gt;.
+Conversations over this protocol used to look like this:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git clone http://github.com/schacon/simplegit-progit.git
+Initialized empty Git repository in /private/tmp/simplegit-progit/.git/
+got ca82a6dff817ec66f44342007202690a93763949
+walk ca82a6dff817ec66f44342007202690a93763949
+got 085bb3bcb608e1e8451d4b2432f8ecbe6306e7e7
+Getting alternates list for http://github.com/schacon/simplegit-progit.git
+Getting pack list for http://github.com/schacon/simplegit-progit.git
+Getting index for pack 816a9b2334da9953e530f27bcac22082a9f5b835
+Getting pack 816a9b2334da9953e530f27bcac22082a9f5b835
+ which contains cfda3bf379e4f8dba8717dee55aab78aef7f4daf
+walk 085bb3bcb608e1e8451d4b2432f8ecbe6306e7e7
+walk a11bef06a3f659402fe7563abf99ad00de2209e6
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;It is a completly passive server, and if the client needs one object in a packfile
+of thousands, the server cannot pull the single object out, the client is forced
+to request the entire packfile.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/smarthttp1.png&quot;&gt;&lt;/p&gt;
+
+&lt;p&gt;In contrast, the smarter protocols (&lt;code&gt;git&lt;/code&gt; and &lt;code&gt;ssh&lt;/code&gt;) would instead have a
+conversation with the &lt;code&gt;git upload-pack&lt;/code&gt; process on the server which would
+determine the exact set of objects the client needs and build a custom packfile
+with just those objects and stream it over.&lt;/p&gt;
+
+&lt;p&gt;The new clients will now send a request with an extra GET parameter that older
+servers will simply ignore, but servers running the smart CGI will recognize
+and switch modes to a multi-POST mode that is similar to the conversation that
+happens over the &lt;code&gt;git&lt;/code&gt; protocol.  Once this series of POSTs is complete, the
+server knows what objects the client needs and can build a custom packfile and
+stream it back.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/smarthttp2.png&quot;&gt;&lt;/p&gt;
+
+&lt;p&gt;Furthermore, in the olden days if you wanted to push over http, you had to setup
+a DAV-based server, which was rather difficult and also pretty inefficient compared
+to the smarter protocols.  Now you can push over this CGI, which again is very
+similar to the push mechanisms for the &lt;code&gt;git&lt;/code&gt; and &lt;code&gt;ssh&lt;/code&gt; protocols.  You simply
+have to authenticate via an HTTP-based method, like basic auth or the like
+(assuming you don&amp;#39;t want your repository to be world-writable).&lt;/p&gt;
+
+&lt;p&gt;The rest of this article will explain setting up a server with the &amp;quot;smart&amp;quot;-http
+protocol, so you can test out this cool new feature.  This feature is referred
+to as &amp;quot;smart&amp;quot; HTTP vs &amp;quot;dumb&amp;quot; HTTP because it requires having the Git binary
+installed on the server, where the previous incantation of HTTP transfer
+required only a simple webserver.  It has a real conversation with the client,
+rather than just dumbly pushing out data.&lt;/p&gt;
+
+&lt;h2&gt;Setting up Smart HTTP&lt;/h2&gt;
+
+&lt;p&gt;So, Smart-HTTP is basically just enabling the new CGI script that is provided
+with Git called
+&lt;a href=&quot;http://www.kernel.org/pub/software/scm/git/docs/git-http-backend.html&quot;&gt;&lt;code&gt;git-http-backend&lt;/code&gt;&lt;/a&gt;
+on the server.  This CGI will read the path and
+headers sent by the revamped &lt;code&gt;git fetch&lt;/code&gt; and &lt;code&gt;git push&lt;/code&gt; binaries who have
+learned to communicate in a specific way with a smart server.  If the CGI sees
+that the client is smart, it will communicate smartly with it, otherwise it will
+simply fall back to the dumb behavior (so it is backward compatible for reads
+with older clients).&lt;/p&gt;
+
+&lt;p&gt;To set it up, it&amp;#39;s best to walk through the instructions on the
+&lt;a href=&quot;http://www.kernel.org/pub/software/scm/git/docs/git-http-backend.html&quot;&gt;&lt;code&gt;git-http-backend&lt;/code&gt;&lt;/a&gt;
+documentation page.  Basically, you have to install Git v1.6.6 or higher on
+a server with an Apache 2.x webserver (it has to be Apache, currently - other
+CGI servers don&amp;#39;t work, last I checked).  Then you add something similar to this
+to your http.conf file:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;SetEnv GIT_PROJECT_ROOT /var/www/git
+SetEnv GIT_HTTP_EXPORT_ALL
+ScriptAlias /git/ /usr/libexec/git-core/git-http-backend/
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Then you&amp;#39;ll want to make writes be authenticated somehow, possibly with an Auth
+block like this:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;&amp;lt;LocationMatch &amp;quot;^/git/.*/git-receive-pack$&amp;quot;&amp;gt;
+        AuthType Basic
+        AuthName &amp;quot;Git Access&amp;quot;
+        Require group committers
+        ...
+&amp;lt;/LocationMatch&amp;gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;That is all that is really required to get this running.  Now you have a smart
+http-based Git server that can do anonymous reads and authenticated writes with
+clients that have upgraded to 1.6.6 and above.
+How awesome is that?  The &lt;a href=&quot;http://www.kernel.org/pub/software/scm/git/docs/git-http-backend.html&quot;&gt;documentation&lt;/a&gt;
+goes over more complex examples, like making it work with GitWeb and accelerating
+the dumb fallback reads, if you&amp;#39;re interested.&lt;/p&gt;
+
+&lt;h2&gt;Rack-based Git Server&lt;/h2&gt;
+
+&lt;p&gt;If you&amp;#39;re not a fan of Apache or you&amp;#39;re running some other web server, you may
+want to take a look at an app that I wrote called &lt;a href=&quot;http://github.com/schacon/grack&quot;&gt;Grack&lt;/a&gt;, which
+is a &lt;a href=&quot;http://rack.rubyforge.org/&quot;&gt;Rack&lt;/a&gt;-based application for Smart-HTTP Git.
+&lt;a href=&quot;http://rack.rubyforge.org/&quot;&gt;Rack&lt;/a&gt; is a generic webserver interface
+for Ruby (similar to WSGI for Python) that has adapters for a ton of web servers.
+It basically replaces &lt;code&gt;git http-backend&lt;/code&gt; for non-Apache servers that can&amp;#39;t run it.&lt;/p&gt;
+
+&lt;p&gt;This means that I can write the web handler independent of the web server and it
+will work with any web server that has a Rack handler.  This currently means any FCGI server,
+Mongrel (and EventedMongrel and SwiftipliedMongrel), WEBrick, SCGI, LiteSpeed,
+Thin, Ebb, Phusion Passenger and Unicorn.  Even cooler, using
+&lt;a href=&quot;http://caldersphere.rubyforge.org/warbler/classes/Warbler.html&quot;&gt;Warbler&lt;/a&gt;
+and JRuby, you can generate a WAR file that is deployable in any Java web
+application server (Tomcat, Glassfish, Websphere, JBoss, etc).&lt;/p&gt;
+
+&lt;p&gt;So, if you don&amp;#39;t use Apache and you are interested in a Smart-HTTP Git server,
+you may want to check out Grack.  At &lt;a href=&quot;http://github.com&quot;&gt;GitHub&lt;/a&gt;, this
+is the adapter we&amp;#39;re using to eventually implement Smart-HTTP support for all
+the GitHub repositories. (It&amp;#39;s currently a tad bit behind, but I&amp;#39;ll be starting
+up on it again soon as I get it into production at GitHub - send pull requests if you
+find any issues)&lt;/p&gt;
+
+&lt;p&gt;Grack is about half as fast as the Apache version for simple ref-listing stuff,
+but we&amp;#39;re talking 10ths of a second.  For most clones and pushes, the data transfer
+will be the main time-sink, so the load time of the app should be negligible.&lt;/p&gt;
+
+&lt;h2&gt;In Conclusion&lt;/h2&gt;
+
+&lt;p&gt;I think HTTP based Git will be a huge part of the future of Git, so if you&amp;#39;re
+running your own Git server, you should really check it out.  If you&amp;#39;re not,
+GitHub and I&amp;#39;m sure other hosts will soon be supporting it - upgrade your Git
+client to 1.7ish soon so you can take advantage of it when it happens.&lt;/p&gt;
+</description>
+</item>
+<item>
+<title> Undoing Merges</title>
+<guid>http://git-scm.com/blog/2010/03/02/undoing-merges.html</guid>
+<link>http://git-scm.com/blog/2010/03/02/undoing-merges.html</link>
+<pubDate>Tue, 2 Mar 2010 00:00:00 +0000</pubDate>
+<description>&lt;p&gt;I would like to start writing more here about general Git tips, tricks and
+upcoming features.  There has actually been a lot of cool stuff that has
+happened since the book was first published, and a number of interesting
+things that I didn&amp;#39;t get around to covering in the book.  I figure if I start
+blogging about the more interesting stuff, it should serve as a pretty handy
+guide should I ever start writing a second edition.&lt;/p&gt;
+
+&lt;p&gt;For the first such post, I&amp;#39;m going to cover a topic that was asked about
+at a training I did recently.  The question was about a workflow where long
+running branches are merged occasionally, much like the &lt;a href=&quot;http://progit.org/book/ch5-3.html#largemerging_workflows&quot;&gt;Large Merging&lt;/a&gt;
+workflow that I describe in the book.  They asked how to unmerge a branch,
+either permenantly or allowing you to merge it in later.&lt;/p&gt;
+
+&lt;p&gt;You can actually do this a number of ways.  Let&amp;#39;s say you have history that
+looks something like this:&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/unmerge1.png&quot;&gt;&lt;/p&gt;
+
+&lt;p&gt;You have a couple of topic branches that you have developed and then integrated
+together by a series of merges.  Now you want to revert something back in the
+history, say &amp;#39;C10&amp;#39; in this case.&lt;/p&gt;
+
+&lt;p&gt;The first way to solve the problem could be to rewind &amp;#39;master&amp;#39; back to C8 and
+then merge the remaining two lines back in again.  This requires that anyone
+you&amp;#39;re collaborating with knows how to handle rewound heads, but if that&amp;#39;s not
+an issue, this is a perfectly viable solution.  This is basically how the &amp;#39;pu&amp;#39;
+branch is handled in the Git project itself.&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git checkout master
+$ git reset --hard [sha_of_C8]
+$ git merge jk/post-checkout
+$ git merge db/push-cleanup
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Once you rewind and remerge, you&amp;#39;ll instead have a history that looks more
+like this:&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/unmerge2.png&quot;&gt;&lt;/p&gt;
+
+&lt;p&gt;Now you can go back and work on that newly unmerged line and merge it again
+at a later point, or perhaps ignore it entirely.&lt;/p&gt;
+
+&lt;h2&gt;Reverting a Merge&lt;/h2&gt;
+
+&lt;p&gt;However, what if you didn&amp;#39;t find this out until later, or perhaps you or one
+of your collaborators have done work after this merge series? What if your
+history looks more like this:&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/unmerge3.png&quot;&gt;&lt;/p&gt;
+
+&lt;p&gt;Now you either have to revert one of the merges, or go back, remerge and then
+cherry-pick the remaining changes again (C9 and C10 in this case), which is
+confusing and difficult, especially if there are a lot of commits after those
+merges.&lt;/p&gt;
+
+&lt;p&gt;Well, it turns out that Git is actually pretty good at reverting an entire merge.
+Although you&amp;#39;ve probably only used the &lt;code&gt;git revert&lt;/code&gt; command to revert a single
+commit (if you&amp;#39;ve used it at all), you can also use it to revert merge commits.&lt;/p&gt;
+
+&lt;p&gt;All you have to do is specify the merge commit you want to revert and the parent
+line you want to keep.  Let&amp;#39;s say that we want to revert the merge of the
+&lt;code&gt;jk/post-checkout&lt;/code&gt; line.  We can do so like this:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git revert -m 1 [sha_of_C8]
+Finished one revert.
+[master 88edd6d] Revert &amp;quot;Merge branch &amp;#39;jk/post-checkout&amp;#39;&amp;quot;
+ 1 files changed, 0 insertions(+), 2 deletions(-)
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;That will introduce a new commit that undoes the changes introduced by merging
+in the branch in the first place - sort of like a reverse cherry pick of all
+of the commits that were unique to that branch.  Pretty cool.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/unmerge4.png&quot;&gt;&lt;/p&gt;
+
+&lt;p&gt;However, we&amp;#39;re not done.&lt;/p&gt;
+
+&lt;h2&gt;Reverting the Revert&lt;/h2&gt;
+
+&lt;p&gt;Let&amp;#39;s say now that you want to re-merge that work again.  If you try to merge
+it again, Git will see that the commits on that branch are in the history and
+will assume that you are mistakenly trying to merge something you already have.&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git merge jk/post-checkout
+Already up-to-date.
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Oops - it did nothing at all. Even more confusing is if you went back and committed on that branch
+and then tried to merge it in, it would only introduce the changes &lt;em&gt;since&lt;/em&gt; you
+originally merged.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/unmerge5.png&quot;&gt;&lt;/p&gt;
+
+&lt;p&gt;Gah.  Now that&amp;#39;s really a strange state and is likely to cause a bunch of
+conflicts or confusing errors.  What you want to do instead is revert the revert
+of the merge:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git revert 88edd6d
+Finished one revert.
+[master 268e243] Revert &amp;quot;Revert &amp;quot;Merge branch &amp;#39;jk/post-checkout&amp;#39;&amp;quot;&amp;quot;
+ 1 files changed, 2 insertions(+), 0 deletions(-)
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/unmerge6.png&quot;&gt;&lt;/p&gt;
+
+&lt;p&gt;Cool, so now we&amp;#39;ve basically reintroduced everything that was in the branch
+that we had reverted out before.  Now if we have more work on that branch
+in the meantime, we can just re-merge it.&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git merge jk/post-checkout
+Auto-merging test.txt
+Merge made by recursive.
+ test.txt |    1 +
+ 1 files changed, 1 insertions(+), 0 deletions(-)
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/unmerge7.png&quot;&gt;&lt;/p&gt;
+
+&lt;p&gt;So, I hope that&amp;#39;s helpful.  This can be particularly useful if you have a merge-heavy
+development process.  In fact, if you work mostly in topic branches before
+merging for intergration purposes, you may want to use the &lt;code&gt;git merge --no-ff&lt;/code&gt;
+option so that the first merge is not a fast forward and can be reverted out
+in this manner.&lt;/p&gt;
+
+&lt;p&gt;Until next time.&lt;/p&gt;
+</description>
+</item>
+<item>
+<title> Translate This</title>
+<guid>http://git-scm.com/blog/2009/08/19/translate-this.html</guid>
+<link>http://git-scm.com/blog/2009/08/19/translate-this.html</link>
+<pubDate>Wed, 19 Aug 2009 00:00:00 +0000</pubDate>
+<description>&lt;p&gt;One of the things I love about Git is how easy it is to fork and contribute.
+More than once on GitHub I&amp;#39;ve put up some content and a handful of helpful 
+souls go about translating it into another language.  Well, it&amp;#39;s happened
+again with Pro Git.  Since I released it under the Creative Commons license
+and put the code &lt;a href=&quot;http://github.com/progit/progit&quot;&gt;up on GitHub&lt;/a&gt;,
+several people have forked and started translating the book into other
+languages such as 
+&lt;a href=&quot;/book/de&quot;&gt;German&lt;/a&gt;, 
+&lt;a href=&quot;/book/zh&quot;&gt;中文&lt;/a&gt;, 
+&lt;a href=&quot;/book/ja&quot;&gt;Japanese&lt;/a&gt; and
+&lt;a href=&quot;/book/ru&quot;&gt;Russian&lt;/a&gt;.&lt;/p&gt;
+
+&lt;p&gt;I&amp;#39;ve been merging this work into &lt;a href=&quot;http://github.com/progit/progit&quot;&gt;my 
+main repository&lt;/a&gt; to make it easier for people who want to help and now I&amp;#39;ve
+started publishing these translations on the main progit.org website.  At the
+bottom of the page in the footer is now a list of ongoing translations (none
+of them are complete yet) that link to the translated content.&lt;/p&gt;
+
+&lt;p&gt;If you know another language and would like to make this Git resource 
+available to others in that language, please either jump into helping with 
+one of the ongoing translations or start a new one - I&amp;#39;ll begin publishing it
+at progit.org once it gets going.&lt;/p&gt;
+
+&lt;p&gt;The process to help with translations is to fork 
+&lt;a href=&quot;http://github.com/progit/progit&quot;&gt;my main content repository&lt;/a&gt;, 
+clone your new fork, make some changes and then send me a pull request through
+GitHub.  Actually, even if you don&amp;#39;t send me a pull request, I tend to check
+out my network graph every few days and pull in things that look good.&lt;/p&gt;
+
+&lt;p&gt;There have so far been more than 30 people who have contributed translated
+material, errata or formatting fixes for my book since I put it up here - 
+thanks to everyone!  However, special thanks for all the help in translating 
+the book so far to Mike Limansky (ru), Victor Portnov (ru), Egor Levichev (ru), Sven Fuchs (de), marcel (de), Fritz Thielemann (de), Yu Inao (ja), chunzi(zh) and DaNmarner (zh).  Also huge thanks to Shane (duairc)
+for all the PDF creation software work.  Keep it up!&lt;/p&gt;
+</description>
+</item>
+<item>
+<title> The Gory Details</title>
+<guid>http://git-scm.com/blog/2009/07/28/the-gory-details.html</guid>
+<link>http://git-scm.com/blog/2009/07/28/the-gory-details.html</link>
+<pubDate>Tue, 28 Jul 2009 00:00:00 +0000</pubDate>
+<description>&lt;p&gt;First of all, thanks to everyone for spreading the word about this book and this site - I got &lt;em&gt;way&lt;/em&gt; more attention on the first day live than I expected I might.  More than 10,000 individuals visited the site in the first 24 hours of it being online for over 38k pageviews.  We got on Hacker News, Reddit and Delicious Popular aggregators, not to mention the Twitterverse.&lt;/p&gt;
+
+&lt;p&gt;In the comments of the initial post here, a user asked me about the &amp;quot;gory details&amp;quot; of writing this book. Specifically about &amp;quot;what tools you used to create the book and its figures&amp;quot;.  So here it is.&lt;/p&gt;
+
+&lt;p&gt;Somewhere else I read that someone liked that I used Markdown for writing the book, as you can download the Markdown source for the book &lt;a href=&quot;http://github.com/progit/progit&quot;&gt;at GitHub&lt;/a&gt;.  Well, the entire writing process was unfortunately not done in Markdown.  At Apress most of the editing and review process is still MS Word centric.  Since I threw hissy fits at Word for the first few chapters the very nice people at Apress allowed me to write the remainder of the book in Markdown initially and the technical reviews were done via a Git repository on GitHub using the Markdown source.&lt;/p&gt;
+
+&lt;p&gt;So, for most of the book, the process was : I would write the first draft of each chapter in Markdown, two reviewers would add comments inline.  Then, I would fix whatever they commented on then move the text into Word to submit it to the copy editor.  The copy editor would review the Word document and let the technical editor have another pass, then I would fix up anything they commented on.  Finally I get the chapter back in PDF form and I would do a final pass.  Then I took that text and put it back in Markdown to generate HTML from for the website.&lt;/p&gt;
+
+&lt;p&gt;Fun, huh?&lt;/p&gt;
+
+&lt;p&gt;For the diagrams, I always use OmniGraffle.  I personally think it&amp;#39;s one of the most amazing pieces of software ever created - I love it.  I think normally an Apress designer would take whatever the author sketched and redo them, but in this case we actually just used the diagrams that I made.  I just added the .graffle file to the &lt;a href=&quot;http://github.com/progit/progit&quot;&gt;GitHub repo&lt;/a&gt; if you&amp;#39;re interested in it.&lt;/p&gt;
+</description>
+</item>
+<item>
+<title> Moved To Github Pages</title>
+<guid>http://git-scm.com/blog/2009/02/11/moved-to-github-pages.html</guid>
+<link>http://git-scm.com/blog/2009/02/11/moved-to-github-pages.html</link>
+<pubDate>Wed, 11 Feb 2009 00:00:00 +0000</pubDate>
+<description>&lt;p&gt;This is the first post on the Pro Git book website, which contains the
+full content of the book published by Apress and a blog for me to share
+Git tips and book news with everybody.&lt;/p&gt;
+
+&lt;p&gt;I&amp;#39;m incredibly excited to get this book published - it has been a really
+long time in the making, and I&amp;#39;m glad Apress let me publish the content
+under a Creative Commons license, so I can share it online as well.  If you 
+find the content helpful, please support this kind of open documentation
+by buying a print version of the book at &lt;a href=&quot;http://www.amazon.com/gp/product/1430218339?ie=UTF8&amp;tag=prgi-20&amp;linkCode=as2&amp;camp=1789&amp;creative=390957&amp;creativeASIN=1430218339&quot;&gt;Amazon&lt;/a&gt;.&lt;/p&gt;
+
+&lt;p&gt;The print version of the book is going to the presses soon and should be 
+shipping around the end of August.  I was first contacted by Apress at the
+very end of November of last year and had my first draft of the first chapter
+in on December 15.  Since then, it has been a whirlwind of writing, reviewing,
+rewriting and re-reviewing of 9 long chapters.  That&amp;#39;s about 8 months from
+start to finish and has been one of the most monumental side-projects I&amp;#39;ve
+ever done.  I&amp;#39;ve learned a ton about the publishing and book-writing process
+and also about Git.&lt;/p&gt;
+
+&lt;p&gt;I hope you enjoy the book and I hope that it helps you to learn one of the 
+most amazing tools you can add to your development arsenal.&lt;/p&gt;
+</description>
+</item>
+</channel>
+</rss>
