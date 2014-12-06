@@ -6,4 +6,8 @@
 *.DS_Store 
 *.swp 
 *.out
+<<<<<<< HEAD
 .idea
+=======
+/.idea
+>>>>>>> b571dd4495f301b12093327d725d0599d052c99a
