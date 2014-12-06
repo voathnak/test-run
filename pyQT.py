@@ -5,7 +5,7 @@ import sys
 
 import os
 
-uifile = os.path.dirname(__file__) + '/test.ui'
+uifile = os.path.dirname(__file__) + '/gui/test.ui'
 print uifile
 form, base = uic.loadUiType(uifile)
 
