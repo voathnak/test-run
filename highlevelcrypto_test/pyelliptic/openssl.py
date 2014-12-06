@@ -104,8 +104,6 @@ class _OpenSSL:
         self.EC_KEY_generate_key.restype = ctypes.c_int
         self.EC_KEY_generate_key.argtypes = [ctypes.c_void_p]
 
-        # test
-        self._lib.EC_KEY_check_key =
         self.EC_KEY_check_key = self._lib.EC_KEY_check_key
         self.EC_KEY_check_key.restype = ctypes.c_int
         self.EC_KEY_check_key.argtypes = [ctypes.c_void_p]
