@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>HaloClientTest</class>
+ <widget class="QDialog" name="HaloClientTest">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>593</width>
+    <height>299</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Dialog</string>
+  </property>
+  <widget class="QTextEdit" name="txt_send_string">
+   <property name="geometry">
+    <rect>
+     <x>20</x>
+     <y>130</y>
+     <width>551</width>
+     <height>151</height>
+    </rect>
+   </property>
+   <property name="tabChangesFocus">
+    <bool>false</bool>
+   </property>
+  </widget>
+  <widget class="QPushButton" name="get_pri_k_btn">
+   <property name="geometry">
+    <rect>
+     <x>490</x>
+     <y>10</y>
+     <width>85</width>
+     <height>26</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string>Private Key</string>
+   </property>
+  </widget>
+  <widget class="QPushButton" name="pushButton_2">
+   <property name="geometry">
+    <rect>
+     <x>490</x>
+     <y>40</y>
+     <width>85</width>
+     <height>26</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string>Public Key</string>
+   </property>
+  </widget>
+  <widget class="QPushButton" name="pushButton_3">
+   <property name="geometry">
+    <rect>
+     <x>490</x>
+     <y>80</y>
+     <width>85</width>
+     <height>26</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string>Send Public</string>
+   </property>
+  </widget>
+  <widget class="QLineEdit" name="lineEdit">
+   <property name="geometry">
+    <rect>
+     <x>20</x>
+     <y>10</y>
+     <width>451</width>
+     <height>25</height>
+    </rect>
+   </property>
+  </widget>
+  <widget class="QLineEdit" name="lineEdit_2">
+   <property name="geometry">
+    <rect>
+     <x>20</x>
+     <y>40</y>
+     <width>451</width>
+     <height>25</height>
+    </rect>
+   </property>
+  </widget>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
